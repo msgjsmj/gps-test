@@ -10,7 +10,7 @@
 
 import { distToBox, distToPolygon, headingGap, pointInPolygon } from './geo.js';
 
-export const PARAMS_VERSION = 2; // bump whenever defaults change; recorded with each shot
+export const PARAMS_VERSION = 3; // bump whenever defaults change; recorded with each shot
 
 export const JUDGE_DEFAULTS = {
   // Share of fixes inside the reported accuracy radius. Android documents 68%,
@@ -73,6 +73,8 @@ export function judge({ buildings, position, accuracy, heading = null, params = 
       if (heading === null) {
         if (!inZone) continue;
       } else {
+        // A sample inside a footprint says nothing about where the camera points.
+        if (dFoot === 0) continue;
         if (!inZone && dFoot > params.viewDistance) continue;
         const gap = headingGap(p, b.footprint, heading);
         score *= (inZone ? 1 : params.offZoneWeight) * Math.exp(-0.5 * (gap / params.headingSigma) ** 2);

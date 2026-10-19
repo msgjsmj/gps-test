@@ -5,7 +5,7 @@ import { dist, normDeg, toGeo, toLocal } from './geo.js';
 import { JUDGE_DEFAULTS, PARAMS_VERSION, judge } from './judge.js';
 import { createMapView } from './map-view.js';
 import { requestHeadingPermission, watchHeading, watchPosition } from './sensors.js';
-import { exportPayload, statsByMode } from './stats.js';
+import { accuracyStats, exportPayload } from './stats.js';
 import { clearAll, loadPhoto, loadSetting, loadVisits, requestPersistence, savePhoto, saveSetting, saveVisit } from './store.js';
 import { ZONE_DEFAULTS, withZones } from './zones.js';
 
@@ -23,11 +23,11 @@ const state = {
   placement: null,
   mode: 'sim',
   sim: { point: null, accuracy: 10, heading: 0 },
-  gps: { fix: null, error: null, stop: null, centered: false },
-  compass: { reading: null, stop: null, denied: false },
+  gps: { fix: null, error: null, stop: null, centered: false, lastAt: 0, staleBefore: 0 },
+  compass: { reading: null, stop: null, denied: false, startedAt: 0 },
   useHeading: false,
   showZones: true,
-  placing: false, // next map tap moves the layout
+  placing: false, // the placement bar is open: map taps move the layout
   testMode: false, // ask for the ground truth after every shot
   visits: [], // metadata only; photos go straight to storage
 };
@@ -73,12 +73,26 @@ function setPlacement(next, { save = true } = {}) {
   refresh();
 }
 
-function placeAt({ lat, lng }) {
+// Placing happens on the map itself (a bar over it), so the layout stays visible while it moves.
+function startPlacing() {
+  $('#settings').close();
+  state.placing = true;
+  document.body.classList.add('placing');
+  $('#place-bar').hidden = false;
+}
+
+function stopPlacing() {
+  if (!state.placing) return;
   state.placing = false;
   document.body.classList.remove('placing');
+  $('#place-bar').hidden = true;
+  saveSetting(placementKey(), state.placement);
+}
+
+function placeAt({ lat, lng }) {
   setPlacement({ anchor: { lat, lng }, rotationDeg: state.placement.rotationDeg });
   view.fit();
-  toast(`${state.area.name} 배치를 옮겼어요`, true);
+  toast(`${state.area.name} 중심을 옮겼어요 — 다 맞추면 완료`, true);
 }
 
 // ---- observation: what the sensors say right now -------------------------
@@ -142,7 +156,12 @@ function judgeBoth(obs, { preview = false } = {}) {
 // ---- rendering ------------------------------------------------------------
 
 const nameOf = (id) => state.buildings.find((b) => b.id === id)?.name ?? id;
-const visitedIds = () => new Set(state.visits.map((v) => v.buildingId).filter(Boolean));
+// Progress, map colours and accuracy cover only the current test: same mode and same
+// placement (a relocated anchor rounded to ~10 m, so small rotation tweaks don't split it).
+const contextOf = (mode, p) => `${mode}|${isReal(p) ? 'real' : `${p.anchor.lat.toFixed(4)},${p.anchor.lng.toFixed(4)}`}`;
+const inCurrentTest = (v) => contextOf(v.mode, v.placement) === contextOf(state.mode, state.placement);
+const currentVisits = () => state.visits.filter(inCurrentTest);
+const visitedIds = () => new Set(currentVisits().map((v) => v.buildingId).filter(Boolean));
 const pct = (p) => `${Math.round(p * 100)}%`;
 const secondsAgo = (t) => Math.round((Date.now() - t) / 1000);
 
@@ -154,10 +173,12 @@ function previewText(obs, j) {
     return ['위치를 찾는 중…', ''];
   }
   const acc = `오차 ±${Math.round(obs.fix.accuracy)}m`;
+  // With "use heading" on, say whether it is actually in play — a missing compass silently means position only.
+  const how = state.useHeading ? (j.used === 'heading' ? '방향 반영' : '방향 없음 → 위치로 판정') : null;
   const { result } = j;
-  if (!result.best) return ['근처에 촬영 대상 건물이 없어요', acc];
+  if (!result.best) return ['근처에 촬영 대상 건물이 없어요', [acc, how].filter(Boolean).join(' · ')];
   const others = result.ranked.slice(1, 3).map((r) => `${nameOf(r.id)} ${pct(r.p)}`);
-  return [`지금 찍으면 → ${nameOf(result.best)} (${pct(result.ranked[0].p)})`, [...others, acc].join(' · ')];
+  return [`지금 찍으면 → ${nameOf(result.best)} (${pct(result.ranked[0].p)})`, [...others, acc, how].filter(Boolean).join(' · ')];
 }
 
 function sensorText(obs) {
@@ -173,8 +194,9 @@ function sensorParts(obs) {
   if (fix) parts.push(`GPS ±${Math.round(fix.accuracy)}m${Date.now() - fix.receivedAt > WARN_FIX_AGE ? ` (${secondsAgo(fix.receivedAt)}초 전)` : ''}`);
   if (state.gps.error && fix) parts.push(state.gps.error);
   if (obs?.heading) parts.push(`방향 ${Math.round(obs.heading.value)}°`);
-  else if (state.compass.denied) parts.push('방향 권한 없음');
-  else if (state.compass.stop) parts.push('방향 대기 중');
+  else if (state.compass.denied) parts.push('방향 권한 거부됨');
+  else if (state.compass.stop && state.compass.reading) parts.push('방향 끊김');
+  else if (state.compass.stop) parts.push(Date.now() - state.compass.startedAt > 5000 ? '나침반 응답 없음 — 폰을 8자로 움직여 보세요' : '방향 대기 중');
   return parts;
 }
 
@@ -216,6 +238,10 @@ function startGps() {
   }
   state.gps.stop = watchPosition(
     (fix) => {
+      // After the page was hidden, a fix stamped no later than the last one seen before
+      // hiding is a cached pre-lock position (iOS replays it on resume): ignore it.
+      if (fix.at <= state.gps.staleBefore) return;
+      state.gps.lastAt = fix.at;
       state.gps.fix = fix;
       state.gps.error = null;
       if (!state.gps.centered) {
@@ -241,7 +267,7 @@ function startGps() {
 
 function stopGps() {
   state.gps.stop?.();
-  Object.assign(state.gps, { stop: null, fix: null, error: null, centered: false });
+  Object.assign(state.gps, { stop: null, fix: null, error: null, centered: false, lastAt: 0, staleBefore: 0 });
 }
 
 // Must be called synchronously inside a tap handler (iOS permission prompt).
@@ -249,10 +275,12 @@ function startCompass() {
   if (state.compass.stop) return;
   requestHeadingPermission().then((perm) => {
     if (perm !== 'granted') {
+      if (!state.compass.denied) notice('방향 권한이 꺼져 있어요', HEADING_HELP);
       state.compass.denied = true;
       return scheduleRefresh();
     }
     state.compass.denied = false;
+    state.compass.startedAt ||= Date.now();
     state.compass.stop ??= watchHeading((h) => {
       const declination = state.area.declination ?? 0;
       state.compass.reading = { ...h, magnetic: h.value, value: normDeg(h.value + declination), declination, at: Date.now() };
@@ -263,7 +291,16 @@ function startCompass() {
 
 function stopCompass() {
   state.compass.stop?.();
-  Object.assign(state.compass, { stop: null, reading: null });
+  Object.assign(state.compass, { stop: null, reading: null, startedAt: 0 });
+}
+
+const HEADING_HELP = '방향 없이도 위치만으로 판정돼요.\n방향을 쓰려면 페이지를 새로고침하고 "현장에서 시작"에서 허용하세요. 다시 묻지 않으면 Safari를 완전히 닫았다가 다시 열어 주세요.';
+const CAMERA_HELP = '카메라 없이 찍은 기록은 남기지 않아요.\nSafari: 주소창의 "가가(aA)" → 웹 사이트 설정 → 카메라 → 허용\nChrome: 주소창 왼쪽 아이콘 → 권한 → 카메라 허용\n그다음 페이지를 새로고침하세요.';
+
+function notice(title, text) {
+  $('#notice-title').textContent = title;
+  $('#notice-text').textContent = text;
+  if (!$('#notice').open) $('#notice').showModal();
 }
 
 function setMode(mode) {
@@ -410,15 +447,16 @@ const choiceButton = (label, className, onClick) => {
   return b;
 };
 
-// Candidates from either judgment first, the judged one marked, then every other building.
+// Nearby candidates (from either judgment) first, in data order, then every other building.
+// The judgment itself stays hidden until a choice is made, so it cannot steer the answer.
 function askTruth(visit) {
-  const candidates = [...new Set([visit.judgments.position, visit.judgments.heading].filter(Boolean).flatMap((j) => j.ranked.map((r) => r.id)))];
-  const rest = state.buildings.map((b) => b.id).filter((id) => !candidates.includes(id));
-  $('#truth-judged').textContent = `판정: ${visit.buildingId ? nameOf(visit.buildingId) : '근처 건물 없음'}${visit.truth ? ` · 기록된 정답: ${truthName(visit.truth)}` : ''}`;
+  const ranked = new Set([visit.judgments.position, visit.judgments.heading].filter(Boolean).flatMap((j) => j.ranked.map((r) => r.id)));
+  const order = state.buildings.map((b) => b.id);
+  const candidates = order.filter((id) => ranked.has(id));
+  const rest = order.filter((id) => !ranked.has(id));
+  $('#truth-judged').textContent = visit.truth ? `기록된 정답: ${truthName(visit.truth)}` : '판정 결과는 고른 뒤에 보여드려요';
   $('#truth-choices').replaceChildren(
-    ...[...candidates, ...rest].map((id) =>
-      choiceButton(nameOf(id), id === visit.buildingId ? 'judged' : candidates.includes(id) ? 'candidate' : '', () => setTruth(visit, id)),
-    ),
+    ...[...candidates, ...rest].map((id) => choiceButton(nameOf(id), candidates.includes(id) ? 'candidate' : '', () => setTruth(visit, id))),
     choiceButton('건물 아님', 'none', () => setTruth(visit, 'none')),
   );
   $('#truth').showModal();
@@ -432,7 +470,8 @@ function setTruth(visit, truth) {
   $('#truth').close();
   persist(visit);
   const right = (visit.buildingId ?? 'none') === truth;
-  toast(right ? `정답 기록: ${truthName(truth)} — 판정 맞음` : `정답 기록: ${truthName(truth)} — 판정 틀림`, right);
+  const judged = visit.buildingId ? nameOf(visit.buildingId) : '건물 없음';
+  toast(right ? `정답 ${truthName(truth)} — 판정 맞음` : `정답 ${truthName(truth)} — 판정은 ${judged}(틀림)`, right);
   if ($('#records').open) renderRecords();
 }
 
@@ -488,8 +527,10 @@ async function openShutter() {
   } catch (e) {
     if (e.name === 'CameraCancelled') return; // closed while opening
     closeShutter();
-    toast('카메라를 열 수 없어 가상 사진으로 기록해요');
-    shootSimulated();
+    // A denied camera must not silently turn shots into un-aimed records.
+    if (e.name === 'NotAllowedError' || e.name === 'SecurityError') return notice('카메라 권한이 꺼져 있어요', CAMERA_HELP);
+    if (['NotFoundError', 'OverconstrainedError', 'NotSupportedError'].includes(e.name)) return shootSimulated(); // no camera here (desktop, headless)
+    toast('카메라를 열 수 없어요 — 다른 앱이 카메라를 쓰고 있지 않은지 확인해 주세요');
   }
 }
 
@@ -525,14 +566,17 @@ function toast(text, ok = false) {
 
 const ratio = (a, b) => (b ? `${a}/${b} (${Math.round((100 * a) / b)}%)` : '-');
 
+const testLabel = () => `${state.mode === 'gps' ? '현장 GPS' : '시뮬레이션'} · ${isReal(state.placement) ? '실제 위치' : '옮긴 배치'}`;
+
 function renderStats() {
-  const { gps: s, sim } = statsByMode(state.visits);
+  const s = accuracyStats(currentVisits());
   const line = (text, strong = false) => Object.assign(document.createElement(strong ? 'strong' : 'p'), { textContent: text });
-  const lines = [line(`현장(GPS) 촬영 ${s.shots}장 · 정답 기록 ${s.labeled}장`, true)];
+  const lines = [line(`이번 테스트(${testLabel()}) 촬영 ${s.shots}장 · 정답 기록 ${s.labeled}장`, true)];
   if (s.labeled) lines.push(line(`위치만 판정 정답 ${ratio(s.position.correct, s.position.total)}`));
   if (s.paired.total) lines.push(line(`방향 있는 ${s.paired.total}장 비교: 위치만 ${ratio(s.paired.position, s.paired.total)} · 위치+방향 ${ratio(s.paired.heading, s.paired.total)}`));
   if (!s.labeled && s.shots) lines.push(line('설정에서 테스트 모드를 켜거나, 아래 로그를 탭해 실제 건물을 기록하면 정답률이 나와요.'));
-  if (sim.shots) lines.push(line(`시뮬레이션 ${sim.shots}장(정답 ${ratio(sim.position.correct, sim.labeled)})은 현장 통계에서 제외`));
+  const others = state.visits.length - s.shots;
+  if (others) lines.push(line(`다른 테스트(모드·배치가 다른) 기록 ${others}장은 여기서 제외 — 내보내기에는 모두 포함`));
   if (unsavedCount()) lines.push(line(`⚠︎ 아직 저장되지 않은 항목 ${unsavedCount()}건 — 내보내기로 보관하세요`));
   $('#stats').replaceChildren(...lines);
 }
@@ -544,7 +588,8 @@ function renderShotLog() {
       const judged = v.buildingId ? `${nameOf(v.buildingId)} ${pct(r.ranked[0].p)}` : '건물 없음';
       const time = new Date(v.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       const b = choiceButton('', '', () => askTruth(v));
-      b.append(`${time} · ${v.mode === 'sim' ? '[시뮬] ' : ''}${judged} · ±${Math.round(v.fix.accuracy)}m${v.used === 'heading' ? ' · 방향' : ''} · `);
+      const tag = inCurrentTest(v) ? '' : `[다른 테스트${v.mode === 'sim' ? '·시뮬' : ''}] `;
+      b.append(`${time} · ${tag}${judged} · ±${Math.round(v.fix.accuracy)}m${v.used === 'heading' ? ' · 방향' : ''} · `);
       const right = v.truth && (v.buildingId ?? 'none') === v.truth;
       b.append(v.truth ? Object.assign(document.createElement('span'), { className: right ? 'ok' : 'ng', textContent: `정답 ${truthName(v.truth)} ${right ? '✓' : '✗'}` }) : '정답 미기록');
       const li = document.createElement('li');
@@ -569,7 +614,7 @@ function renderRecords() {
   renderShotLog();
   $('#record-list').replaceChildren(
     ...state.buildings.map((b) => {
-      const mine = state.visits.filter((v) => v.buildingId === b.id);
+      const mine = currentVisits().filter((v) => v.buildingId === b.id);
       const li = document.createElement('li');
       li.className = mine.length ? 'done' : '';
       const mark = Object.assign(document.createElement('span'), { className: 'mark', textContent: mine.length ? '✓' : '○' });
@@ -604,11 +649,15 @@ function bindControls() {
   // A backgrounded page must not keep the camera (Android keeps capturing; iOS returns a muted track).
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && !$('#camera').hidden) closeShutter();
+    if (document.hidden && state.gps.fix) {
+      // The tester may walk while the screen is off; never judge with the pre-lock position.
+      state.gps.staleBefore = state.gps.lastAt;
+      state.gps.fix = null;
+    }
     if (!document.hidden && unsavedCount()) flush(); // iOS may have dropped the storage connection
   });
   $('#open-settings').addEventListener('click', () => {
-    state.placing = false; // opening settings cancels a pending "tap to place"
-    document.body.classList.remove('placing');
+    stopPlacing();
     $('#settings').showModal();
   });
   $('#progress').addEventListener('click', () => {
@@ -640,17 +689,12 @@ function bindControls() {
     state.showZones = e.target.checked;
     refresh();
   });
+  $('#place-start').addEventListener('click', startPlacing);
+  $('#place-done').addEventListener('click', stopPlacing);
   $('#place-here').addEventListener('click', () => {
     const fix = state.gps.fix;
     if (!fix || Date.now() - fix.receivedAt > MAX_FIX_AGE) return toast(noFixMessage());
-    $('#settings').close();
     placeAt(fix);
-  });
-  $('#place-tap').addEventListener('click', () => {
-    $('#settings').close();
-    state.placing = true;
-    document.body.classList.add('placing');
-    toast(`${state.area.name} 중심을 둘 곳을 지도에서 탭하세요`);
   });
   // Dragging the slider redraws at most once per frame and saves when released.
   let rotateFrame = 0;
@@ -666,6 +710,7 @@ function bindControls() {
   $('#place-reset').addEventListener('click', () => {
     setPlacement(realPlacement());
     view.fit();
+    toast(`${state.area.name} 실제 위치로 되돌렸어요`);
   });
   $('#test-mode').addEventListener('change', (e) => {
     state.testMode = e.target.checked;
@@ -714,4 +759,9 @@ async function start() {
   for (const b of [$('#start-gps'), $('#start-sim')]) b.disabled = false;
 }
 
-start();
+// Any start-up failure (e.g. a cached old page mixed with new code right after a deploy)
+// leaves a visible way out instead of a dead start screen.
+start().catch((e) => {
+  console.error(e);
+  $('#start-note').textContent = '앱을 시작하지 못했어요. 새로고침해 주세요. (방금 업데이트됐다면 1~2분 뒤 다시)';
+});

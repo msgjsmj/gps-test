@@ -98,6 +98,11 @@ test('with heading, pointing at nothing checks nothing', () => {
   const lone = withZones([{ id: 'A', footprint: square(0, 0, 5), facing: [180] }]);
   assert.equal(judge({ buildings: lone, position: [0, -12], accuracy: 4, heading: 0 }).best, 'A');
   assert.equal(judge({ buildings: lone, position: [0, -12], accuracy: 4, heading: 180 }).best, null);
+  // Typical phone accuracy puts part of the Gaussian inside the footprint; that must not count.
+  for (const y of [-10, -8]) {
+    const away = judge({ buildings: lone, position: [0, y], accuracy: 10, heading: 180 });
+    assert.equal(away.best, null, `y=${y}: ${JSON.stringify(away.ranked)}`);
+  }
 });
 
 test('poor accuracy spreads probability and shrinks the margin', () => {

@@ -32,11 +32,29 @@
 
   <div id="toast" class="toast" role="status" hidden></div>
 
+  <section id="place-bar" class="place-bar" hidden>
+    <p>지도를 탭하면 그곳이 궁 중심이 돼요</p>
+    <label>회전 <output id="rotation-out">0</output>°
+      <input id="rotation" type="range" min="0" max="359" step="1" value="0"></label>
+    <div class="row">
+      <button id="place-here" type="button" class="secondary gps-only">내 위치를 중심으로</button>
+      <button id="place-done" type="button" class="primary">완료</button>
+    </div>
+  </section>
+
+  <dialog id="notice">
+    <form method="dialog">
+      <h2 id="notice-title"></h2>
+      <p id="notice-text"></p>
+      <button class="primary" value="close">확인</button>
+    </form>
+  </dialog>
+
   <section id="start" class="overlay start">
     <h2 id="start-title">방문 체크</h2>
     <p id="start-note">건물 사진을 찍으면, 찍은 위치로 어느 건물을 방문했는지 자동으로 체크해요.</p>
     <button id="start-gps" class="primary big" type="button" disabled>현장에서 시작</button>
-    <p class="sub">위치·방향·카메라 권한을 요청해요.</p>
+    <p class="sub">위치·방향 권한을 지금 요청해요. 카메라는 첫 촬영 때 물어봐요.</p>
     <button id="start-sim" class="secondary big" type="button" disabled>시뮬레이션으로 둘러보기</button>
     <p class="sub">지도를 탭한 곳을 내 위치로 써요.</p>
   </section>
@@ -67,10 +85,7 @@
       <fieldset>
         <legend>건물 배치</legend>
         <p id="placement-status" class="sub"></p>
-        <button id="place-here" type="button" class="secondary gps-only">지금 내 위치를 궁 중심으로</button>
-        <button id="place-tap" type="button" class="secondary">지도를 탭해서 옮기기</button>
-        <label>회전 <output id="rotation-out">0</output>°
-          <input id="rotation" type="range" min="0" max="359" step="1" value="0"></label>
+        <button id="place-start" type="button" class="secondary">배치 옮기기·회전 (지도에서)</button>
         <button id="place-reset" type="button" class="secondary">실제 위치로 되돌리기</button>
       </fieldset>
       <fieldset>
