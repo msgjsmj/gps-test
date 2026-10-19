@@ -65,6 +65,15 @@
           <input id="accuracy" type="range" min="3" max="40" step="1" value="10"></label>
       </fieldset>
       <fieldset>
+        <legend>건물 배치</legend>
+        <p id="placement-status" class="sub"></p>
+        <button id="place-here" type="button" class="secondary gps-only">지금 내 위치를 궁 중심으로</button>
+        <button id="place-tap" type="button" class="secondary">지도를 탭해서 옮기기</button>
+        <label>회전 <output id="rotation-out">0</output>°
+          <input id="rotation" type="range" min="0" max="359" step="1" value="0"></label>
+        <button id="place-reset" type="button" class="secondary">실제 위치로 되돌리기</button>
+      </fieldset>
+      <fieldset>
         <legend>판정</legend>
         <label><input id="use-heading" type="checkbox"> 방향(나침반)을 판정에 반영</label>
         <label class="sim-only">방향 <output id="heading-out">0</output>°

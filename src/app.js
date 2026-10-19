@@ -5,6 +5,7 @@ import { dist, normDeg, toGeo, toLocal } from './geo.js';
 import { JUDGE_DEFAULTS, PARAMS_VERSION, judge } from './judge.js';
 import { createMapView } from './map-view.js';
 import { requestHeadingPermission, watchHeading, watchPosition } from './sensors.js';
+import { loadSetting, saveSetting } from './store.js';
 import { ZONE_DEFAULTS, withZones } from './zones.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -25,13 +26,14 @@ const state = {
   compass: { reading: null, stop: null, denied: false },
   useHeading: false,
   showZones: true,
+  placing: false, // next map tap moves the layout
   visits: [],
 };
 
 const view = createMapView($('#map'), {
-  onMapClick: setSimPoint,
-  // In simulation a tap on a building is still a position; otherwise it focuses the building.
-  onBuildingClick: (id, point) => (state.mode === 'sim' ? setSimPoint(point) : view.focus(id)),
+  onMapClick: tapMap,
+  // In simulation (or while placing) a tap on a building is still a map tap; otherwise it focuses the building.
+  onBuildingClick: (id, point) => (state.mode === 'sim' || state.placing ? tapMap(point) : view.focus(id)),
   onLocate() {
     const obs = observe();
     if (obs) return view.panTo(obs.point);
@@ -41,10 +43,40 @@ const view = createMapView($('#map'), {
   },
 });
 
-function setSimPoint(point) {
+function tapMap(point) {
+  if (state.placing) return placeAt(toGeo(state.placement, point));
   if (state.mode !== 'sim') return;
   state.sim.point = point;
   refresh();
+}
+
+// ---- placement: where the layout sits on the ground ---------------------------
+
+const placementKey = () => `placement:${state.area.id}`;
+const realPlacement = () => ({ anchor: { ...state.area.anchor }, rotationDeg: 0 });
+const isReal = (p) => p.anchor.lat === state.area.anchor.lat && p.anchor.lng === state.area.anchor.lng && !p.rotationDeg;
+const validPlacement = (p) => Number.isFinite(p?.anchor?.lat) && Number.isFinite(p?.anchor?.lng) && Number.isFinite(p?.rotationDeg);
+
+// The local frame moves with the layout: a simulated point stays at the same spot in the palace.
+function setPlacement(next) {
+  state.placement = next;
+  saveSetting(placementKey(), next);
+  view.setArea(state.area, state.buildings, next);
+  $('#rotation').value = next.rotationDeg;
+  $('#rotation-out').textContent = next.rotationDeg;
+  const offKm = dist(toLocal(realPlacement(), next.anchor), [0, 0]) / 1000;
+  $('#placement-status').textContent = isReal(next)
+    ? `실제 위치 (${state.area.name})`
+    : `옮김 · 실제 위치에서 ${offKm.toFixed(1)}km · 회전 ${next.rotationDeg}°`;
+  refresh();
+}
+
+function placeAt({ lat, lng }) {
+  state.placing = false;
+  document.body.classList.remove('placing');
+  setPlacement({ anchor: { lat, lng }, rotationDeg: state.placement.rotationDeg });
+  view.fit();
+  toast(`${state.area.name} 배치를 옮겼어요`, true);
 }
 
 // ---- observation: what the sensors say right now -------------------------
@@ -406,7 +438,11 @@ function bindControls() {
   $('#camera-close').addEventListener('click', closeShutter);
   // A backgrounded page must not keep the camera (Android keeps capturing; iOS returns a muted track).
   document.addEventListener('visibilitychange', () => document.hidden && !$('#camera').hidden && closeShutter());
-  $('#open-settings').addEventListener('click', () => $('#settings').showModal());
+  $('#open-settings').addEventListener('click', () => {
+    state.placing = false; // opening settings cancels a pending "tap to place"
+    document.body.classList.remove('placing');
+    $('#settings').showModal();
+  });
   $('#progress').addEventListener('click', () => {
     renderRecords();
     $('#records').showModal();
@@ -436,6 +472,23 @@ function bindControls() {
     state.showZones = e.target.checked;
     refresh();
   });
+  $('#place-here').addEventListener('click', () => {
+    const fix = state.gps.fix;
+    if (!fix || Date.now() - fix.receivedAt > MAX_FIX_AGE) return toast(noFixMessage());
+    $('#settings').close();
+    placeAt(fix);
+  });
+  $('#place-tap').addEventListener('click', () => {
+    $('#settings').close();
+    state.placing = true;
+    document.body.classList.add('placing');
+    toast(`${state.area.name} 중심을 둘 곳을 지도에서 탭하세요`);
+  });
+  $('#rotation').addEventListener('input', (e) => setPlacement({ ...state.placement, rotationDeg: Number(e.target.value) }));
+  $('#place-reset').addEventListener('click', () => {
+    setPlacement(realPlacement());
+    view.fit();
+  });
   $('#reset').addEventListener('click', () => {
     if (!confirm('방문 기록을 모두 지울까요?')) return;
     state.visits = [];
@@ -457,12 +510,11 @@ async function start() {
   state.area = area;
   state.areaHash = hashText(JSON.stringify(area.buildings));
   state.buildings = withZones(area.buildings);
-  state.placement = { anchor: area.anchor, rotationDeg: 0 };
   for (const el of [$('#title'), $('#start-title')]) el.textContent = `${area.name} 방문 체크`;
   document.title = `${area.name} 방문 체크`;
-  view.setArea(area, state.buildings, state.placement);
+  const saved = loadSetting(placementKey(), null);
+  setPlacement(validPlacement(saved) ? saved : realPlacement());
   view.fit();
-  refresh();
   for (const b of [$('#start-gps'), $('#start-sim')]) b.disabled = false;
 }
 
