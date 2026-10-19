@@ -2,6 +2,7 @@
  "id": "deoksugung",
  "name": "덕수궁",
  "source": "© OpenStreetMap contributors (ODbL), fetched 2026-10-19",
+ "declination": -9.0,
  "anchor": {
   "lat": 37.566134,
   "lng": 126.975054

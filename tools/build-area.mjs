@@ -10,6 +10,9 @@ const AREA = {
   name: '덕수궁',
   boundaryWay: 26658458,
   anchor: { lat: 37.566134, lng: 126.975054 }, // center of the palace bbox
+  // Magnetic declination, degrees east (WMM2025 at the anchor, 2026-10-20: -9.02).
+  // Compass readings are magnetic; true bearing = magnetic + declination.
+  declination: -9.0,
   // facing: bearings people photograph the building from (180 = its south face).
   // facingAssumed marks values not yet checked on site.
   buildings: [
@@ -78,6 +81,7 @@ const area = {
   id: AREA.id,
   name: AREA.name,
   source: `© OpenStreetMap contributors (ODbL), fetched ${new Date().toISOString().slice(0, 10)}`,
+  declination: AREA.declination,
   anchor: AREA.anchor,
   boundary: ring(need(`way/${AREA.boundaryWay}`)),
   buildings: AREA.buildings.map(({ osm, ...b }) => ({ ...b, osm, footprint: ring(need(osm)) })),

@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#7b341e">
+  <title>궁궐 방문 체크</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+  <link rel="stylesheet" href="src/style.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script type="module" src="src/app.js"></script>
+</head>
+<body>
+  <header class="bar">
+    <h1 id="title">방문 체크</h1>
+    <button id="progress" class="chip" type="button" aria-label="방문 기록 보기">0 / 0</button>
+    <button id="open-settings" class="icon-btn" type="button" aria-label="설정">⚙︎</button>
+  </header>
+
+  <main id="map" aria-label="지도"></main>
+
+  <section class="sheet" aria-live="polite">
+    <div class="preview">
+      <p class="status"><span id="mode-chip" class="mode-chip">시뮬레이션</span> <span id="sensor-status" class="sub"></span></p>
+      <p id="preview-main">지도를 탭해서 내 위치를 정하세요</p>
+      <p id="preview-sub" class="sub"></p>
+    </div>
+    <button id="shoot" class="shoot" type="button">📷 촬영</button>
+  </section>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <section id="start" class="overlay start">
+    <h2 id="start-title">방문 체크</h2>
+    <p id="start-note">건물 사진을 찍으면, 찍은 위치로 어느 건물을 방문했는지 자동으로 체크해요.</p>
+    <button id="start-gps" class="primary big" type="button" disabled>현장에서 시작</button>
+    <p class="sub">위치·방향·카메라 권한을 요청해요.</p>
+    <button id="start-sim" class="secondary big" type="button" disabled>시뮬레이션으로 둘러보기</button>
+    <p class="sub">지도를 탭한 곳을 내 위치로 써요.</p>
+  </section>
+
+  <section id="camera" class="overlay camera" hidden>
+    <video id="camera-video" playsinline muted autoplay></video>
+    <p id="camera-preview" class="camera-preview"></p>
+    <div class="camera-bar">
+      <button id="camera-close" class="camera-close" type="button" aria-label="카메라 닫기">✕</button>
+      <button id="camera-shutter" class="camera-shutter" type="button" aria-label="촬영"></button>
+      <span class="camera-spacer"></span>
+    </div>
+  </section>
+
+  <dialog id="settings">
+    <form method="dialog">
+      <h2>설정</h2>
+      <fieldset>
+        <legend>위치 소스</legend>
+        <label><input type="radio" name="mode" value="sim" checked> 시뮬레이션 (지도 탭 = 내 위치)</label>
+        <label><input type="radio" name="mode" value="gps"> 실제 GPS</label>
+      </fieldset>
+      <fieldset class="sim-only">
+        <legend>시뮬레이션</legend>
+        <label>GPS 오차 <output id="accuracy-out">10</output> m
+          <input id="accuracy" type="range" min="3" max="40" step="1" value="10"></label>
+      </fieldset>
+      <fieldset>
+        <legend>판정</legend>
+        <label><input id="use-heading" type="checkbox"> 방향(나침반)을 판정에 반영</label>
+        <label class="sim-only">방향 <output id="heading-out">0</output>°
+          <input id="heading" type="range" min="0" max="359" step="1" value="0"></label>
+        <label><input id="show-zones" type="checkbox" checked> 촬영 존 표시</label>
+      </fieldset>
+      <fieldset>
+        <legend>데이터</legend>
+        <button id="reset" type="button" class="danger">방문 기록 초기화</button>
+      </fieldset>
+      <button class="primary" value="close">닫기</button>
+    </form>
+  </dialog>
+
+  <dialog id="records">
+    <form method="dialog">
+      <h2>방문 기록</h2>
+      <ul id="record-list" class="record-list"></ul>
+      <button class="primary" value="close">닫기</button>
+    </form>
+  </dialog>
+</body>
+</html>
