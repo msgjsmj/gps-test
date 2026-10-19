@@ -24,6 +24,17 @@
 | 데이터 저장 | **폰 안에만 + 파일 내보내기** (서버 없음) |
 | 방향(나침반) | **항상 기록, 판정 반영은 켜고 끄며 비교** |
 
+## 바로 쓰기 — https://msgjsmj.github.io/gps-test/
+
+폰(iOS Safari / Android Chrome)에서 위 주소를 연다. 코드: https://github.com/msgjsmj/gps-test (공개).
+
+**동네 현장 테스트 순서**
+1. 넓은 공원(덕수궁 영역 ≈ 310 × 290 m)에서 "현장에서 시작" → 위치·방향·카메라 권한 허용.
+2. ⚙︎ 설정 → 건물 배치 → "지금 내 위치를 궁 중심으로" → 회전으로 공원 모양에 맞춤.
+3. ⚙︎ 설정 → "테스트 모드" 켜기. "방향 반영"은 켜든 끄든 두 판정이 모두 기록된다(체크 기준만 바뀜).
+4. 지도의 건물(가상)을 실제 건물처럼 보고 그 촬영 존 근처에서 그쪽을 향해 📷 촬영 → "실제로 찍은 건물은?"에 정답 탭.
+5. 상단 `n / 12` → 기록 화면에서 정답률 확인 → "기록 내보내기 (JSON)"로 보관.
+
 ## Status
 
 - [x] 요구사항 인터뷰, 핵심 설계 합의 (2026-10-20)
@@ -45,7 +56,8 @@
   - 저장: IndexedDB v2 — `visits`(메타데이터)와 `photos`(촬영 때 한 번만 기록) 분리. 실패한 쓰기는 큐에 남아 다음 쓰기·화면 복귀 때 재시도, 상태줄에 "미저장 N건".
   - 내보내기: JSON(`gps-test-visits/1`, 사진 제외). 폰은 공유 시트, 안 되면 다운로드.
   - 검증(headless): 촬영→정답→새로고침 후 복원→정답 재기록(썸네일 정상)→시뮬 분리 집계, IndexedDB 쓰기 강제 실패 → "미저장 2건" → 복구 후 재시도 → DB에 visits 2·photos 2, 에러 0.
-- [ ] HTTPS 배포 준비
+- [x] HTTPS 배포: GitHub Pages (공개 저장소 `msgjsmj/gps-test`, 사용자 결정 2026-10-20). `main` push → Pages 자동 배포. `.nojekyll`로 정적 파일 그대로 서빙.
+  - 저장소 전용 git 작성자: `Minkyu Seo <1224114+msgjsmj@users.noreply.github.com>`(호스트명 노출 방지, 전역 설정은 그대로).
 - [ ] 전체 리뷰 2회 연속 무결
 
 ## 설계
@@ -79,10 +91,15 @@
 ```
 index.html            단일 페이지
 src/                  ES modules (빌드 없음)
-  geo.js              좌표 변환·거리·폴리곤 (순수 함수)
+  geo.js              좌표 변환·거리·폴리곤 (순수)
   zones.js            촬영 존 생성 (순수)
   judge.js            판정 (순수)
-  ...                 지도·센서·카메라·저장·UI
+  stats.js            정답률 집계·내보내기 형식 (순수)
+  sensors.js          GPS·나침반 (backCameraHeading은 순수)
+  camera.js           페이지 내 카메라(취소 가능한 열기)
+  store.js            IndexedDB(visits/photos)·localStorage
+  map-view.js         Leaflet 렌더링(지도 교체 지점)
+  app.js              컨트롤러: 상태·관측·판정·기록·화면
 data/deoksugung.json  area 데이터 (OSM에서 생성)
 tools/build-area.mjs  OSM Overpass → area JSON
 test/                 node --test
@@ -93,7 +110,8 @@ test/                 node --test
 python3 -m http.server 8000   # http://localhost:8000
 node --test                   # 순수 로직 테스트
 ```
-폰 테스트는 HTTPS 필요(Geolocation·카메라·방향 API 제약) → 배포 단계에서 정함.
+폰 테스트는 HTTPS 필요(Geolocation·카메라·방향 API 제약) → GitHub Pages(`main` push 시 자동 배포).
+OSM 데이터 갱신: `npm run build:area` (Overpass, 실패 시 미러로 재시도).
 
 ## Big picture ahead (generative sequence)
 1. **판정이 PC에서 끝까지 도는 것**이 중심. 시뮬레이션(지도 탭 = 내 위치)으로 판정 품질을 눈으로 보며 튜닝.
@@ -115,10 +133,10 @@ node --test                   # 순수 로직 테스트
 - Safari는 오래 안 쓴 사이트의 저장 데이터를 지울 수 있다 → 현장 테스트 후 바로 내보내기.
 
 ## Needs confirmation
-- HTTPS 배포 대상(GitHub Pages 등) — 외부 공개 행위이므로 실행 전 사용자 확인.
-- 건물 facing 값 중 일부(정관헌, 돈덕전)는 추정 — 현장에서 확인.
+- **실기기 확인 필요**(headless로는 불가): iOS/Android에서 카메라 미리보기·촬영, iOS 방향 권한 팝업, 방향 부채꼴이 실제 카메라 방향과 맞는지(자편각 보정 포함).
+- 건물 facing 값 중 일부(정관헌, 돈덕전)는 추정 — 실제 궁에서 확인.
 
 ## Known vs. unknown
-- **확인됨**: 건물 간격(OSM 실측), iOS Safari EXIF GPS 제거(WebKit 버그, 2023년 기준 보고).
-- **가정**: accuracy의 신뢰수준(95% 가정), 존 깊이·폭 기본값, 방향 σ=30°, iOS에서 네이티브 카메라 사용 시 페이지 중단.
+- **확인됨**: 건물 간격(OSM 실측), iOS Safari EXIF GPS 제거(WebKit 버그, 2023년 기준 보고), 덕수궁 자편각 -9.02°(WMM2025), 판정·존·통계 로직(테스트 31개), headless에서 전체 흐름.
+- **가정**: accuracy의 신뢰수준(68% 가정), 존 깊이·폭 기본값, 방향 σ=30°·존 밖 가중 0.5·기권 0.1, 나침반이 자북 기준, iOS에서 네이티브 카메라 사용 시 페이지 중단.
 - **미지**: 궁궐 현장의 실제 GPS 오차, 나침반 오차(건물·금속 근처), 사용자가 실제로 서서 찍는 위치 분포.
