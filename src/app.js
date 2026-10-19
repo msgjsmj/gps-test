@@ -5,7 +5,8 @@ import { dist, normDeg, toGeo, toLocal } from './geo.js';
 import { JUDGE_DEFAULTS, PARAMS_VERSION, judge } from './judge.js';
 import { createMapView } from './map-view.js';
 import { requestHeadingPermission, watchHeading, watchPosition } from './sensors.js';
-import { loadSetting, saveSetting } from './store.js';
+import { exportPayload, statsByMode } from './stats.js';
+import { clearAll, loadPhoto, loadSetting, loadVisits, requestPersistence, savePhoto, saveSetting, saveVisit } from './store.js';
 import { ZONE_DEFAULTS, withZones } from './zones.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -27,7 +28,8 @@ const state = {
   useHeading: false,
   showZones: true,
   placing: false, // next map tap moves the layout
-  visits: [],
+  testMode: false, // ask for the ground truth after every shot
+  visits: [], // metadata only; photos go straight to storage
 };
 
 const view = createMapView($('#map'), {
@@ -58,9 +60,9 @@ const isReal = (p) => p.anchor.lat === state.area.anchor.lat && p.anchor.lng ===
 const validPlacement = (p) => Number.isFinite(p?.anchor?.lat) && Number.isFinite(p?.anchor?.lng) && Number.isFinite(p?.rotationDeg);
 
 // The local frame moves with the layout: a simulated point stays at the same spot in the palace.
-function setPlacement(next) {
+function setPlacement(next, { save = true } = {}) {
   state.placement = next;
-  saveSetting(placementKey(), next);
+  if (save) saveSetting(placementKey(), next);
   view.setArea(state.area, state.buildings, next);
   $('#rotation').value = next.rotationDeg;
   $('#rotation-out').textContent = next.rotationDeg;
@@ -159,7 +161,13 @@ function previewText(obs, j) {
 }
 
 function sensorText(obs) {
-  if (state.mode === 'sim') return state.useHeading ? `방향 ${state.sim.heading}°` : '';
+  const parts = sensorParts(obs);
+  if (unsavedCount()) parts.push(`미저장 ${unsavedCount()}건`);
+  return parts.join(' · ');
+}
+
+function sensorParts(obs) {
+  if (state.mode === 'sim') return state.useHeading ? [`방향 ${state.sim.heading}°`] : [];
   const parts = [];
   const fix = state.gps.fix;
   if (fix) parts.push(`GPS ±${Math.round(fix.accuracy)}m${Date.now() - fix.receivedAt > WARN_FIX_AGE ? ` (${secondsAgo(fix.receivedAt)}초 전)` : ''}`);
@@ -167,7 +175,7 @@ function sensorText(obs) {
   if (obs?.heading) parts.push(`방향 ${Math.round(obs.heading.value)}°`);
   else if (state.compass.denied) parts.push('방향 권한 없음');
   else if (state.compass.stop) parts.push('방향 대기 중');
-  return parts.join(' · ');
+  return parts;
 }
 
 function refresh() {
@@ -299,7 +307,12 @@ function simulatedPhoto(obs) {
   g.fillText('SIMULATED', 16, 34);
   g.font = '16px sans-serif';
   g.fillText(`${new Date().toLocaleTimeString()}  ${obs.fix.lat.toFixed(6)}, ${obs.fix.lng.toFixed(6)}`, 16, 345);
-  return new Promise((resolve) => c.toBlob(resolve, 'image/jpeg', 0.8));
+  return new Promise((resolve) =>
+    c.toBlob((blob) => {
+      c.width = c.height = 0; // release canvas memory (iOS caps the total)
+      resolve(blob);
+    }, 'image/jpeg', 0.8),
+  );
 }
 
 const summarize = (r) => r && { best: r.best, ranked: r.ranked, margin: r.margin, sigma: r.sigma };
@@ -327,13 +340,128 @@ async function record(obs, j, photoPromise, photoKind) {
     judgments: { position: summarize(j.position), heading: summarize(j.heading) },
     used: j.used,
     buildingId: j.result.best,
-    photo: await photoPromise.catch(() => null),
     photoKind,
   };
+  const photo = await photoPromise.catch(() => null);
+  visit.photoBytes = photo?.size ?? 0;
   state.visits.push(visit);
+  persist(visit);
+  persistPhoto(visit.id, photo);
   if (visit.buildingId) toast(`✓ ${nameOf(visit.buildingId)} 방문 체크!`, true);
   else toast('근처에 촬영 대상 건물이 없어서 체크하지 않았어요');
   refresh();
+  if (state.testMode) askTruth(visit);
+}
+
+// ---- persistence and ground truth -------------------------------------------
+
+// Writes queue here and leave only after a successful save; failures retry on
+// the next write or when the page comes back. The count shows in the status line.
+const unsaved = new Map(); // visit id → metadata snapshot
+const unsavedPhotos = new Map(); // visit id → photo blob (held in memory only until saved)
+let flushing = false, flushAgain = false, warnedStorage = false, persistenceAsked = false;
+const unsavedCount = () => unsaved.size + unsavedPhotos.size;
+
+function persist(visit) {
+  unsaved.set(visit.id, { ...visit }); // snapshot: a later edit queues a newer one
+  flush();
+}
+
+function persistPhoto(id, blob) {
+  if (!blob) return;
+  unsavedPhotos.set(id, blob);
+  flush();
+}
+
+async function flush() {
+  if (flushing) return (flushAgain = true);
+  flushing = true;
+  if (!persistenceAsked) {
+    persistenceAsked = true;
+    requestPersistence();
+  }
+  for (const [id, snap] of [...unsaved]) {
+    try {
+      await saveVisit(snap);
+      if (unsaved.get(id) === snap) unsaved.delete(id);
+    } catch {}
+  }
+  for (const [id, blob] of [...unsavedPhotos]) {
+    try {
+      await savePhoto(id, blob);
+      if (unsavedPhotos.get(id) === blob) unsavedPhotos.delete(id);
+    } catch {}
+  }
+  flushing = false;
+  if (flushAgain) {
+    flushAgain = false;
+    return flush();
+  }
+  if (unsavedCount() && !warnedStorage) {
+    warnedStorage = true;
+    toast('기록 저장에 실패했어요 — 다시 시도 중. 꼭 내보내기로 보관하세요');
+  }
+  scheduleRefresh();
+}
+
+const choiceButton = (label, className, onClick) => {
+  const b = Object.assign(document.createElement('button'), { type: 'button', textContent: label, className });
+  b.addEventListener('click', onClick);
+  return b;
+};
+
+// Candidates from either judgment first, the judged one marked, then every other building.
+function askTruth(visit) {
+  const candidates = [...new Set([visit.judgments.position, visit.judgments.heading].filter(Boolean).flatMap((j) => j.ranked.map((r) => r.id)))];
+  const rest = state.buildings.map((b) => b.id).filter((id) => !candidates.includes(id));
+  $('#truth-judged').textContent = `판정: ${visit.buildingId ? nameOf(visit.buildingId) : '근처 건물 없음'}${visit.truth ? ` · 기록된 정답: ${truthName(visit.truth)}` : ''}`;
+  $('#truth-choices').replaceChildren(
+    ...[...candidates, ...rest].map((id) =>
+      choiceButton(nameOf(id), id === visit.buildingId ? 'judged' : candidates.includes(id) ? 'candidate' : '', () => setTruth(visit, id)),
+    ),
+    choiceButton('건물 아님', 'none', () => setTruth(visit, 'none')),
+  );
+  $('#truth').showModal();
+}
+
+const truthName = (truth) => (truth === 'none' ? '건물 아님' : nameOf(truth));
+
+function setTruth(visit, truth) {
+  visit.truth = truth;
+  visit.truthAt = new Date().toISOString();
+  $('#truth').close();
+  persist(visit);
+  const right = (visit.buildingId ?? 'none') === truth;
+  toast(right ? `정답 기록: ${truthName(truth)} — 판정 맞음` : `정답 기록: ${truthName(truth)} — 판정 틀림`, right);
+  if ($('#records').open) renderRecords();
+}
+
+const localStamp = (d = new Date()) => {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
+};
+
+// Share sheet on phones (AirDrop, Files, messengers); plain download elsewhere.
+function exportVisits() {
+  if (!state.visits.length) return toast('내보낼 기록이 없어요');
+  const payload = exportPayload(state.area, state.visits);
+  const file = new File([JSON.stringify(payload, null, 1)], `gps-test-${state.area.id}-${localStamp()}.json`, { type: 'application/json' });
+  if (navigator.canShare?.({ files: [file] })) {
+    return navigator.share({ files: [file], title: file.name }).catch((e) => {
+      if (e.name === 'AbortError') return; // user closed the share sheet
+      toast('공유하지 못해 파일로 내려받아요');
+      download(file);
+    });
+  }
+  download(file);
+}
+
+function download(file) {
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(file), download: file.name });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
 }
 
 const noFixMessage = () => (state.mode === 'sim' ? '먼저 지도를 탭해서 위치를 정하세요' : state.gps.error ?? '아직 위치를 못 잡았어요');
@@ -395,9 +523,50 @@ function toast(text, ok = false) {
   toastTimer = setTimeout(() => (el.hidden = true), 2500);
 }
 
-// Thumbnails live only while the records dialog is open.
+const ratio = (a, b) => (b ? `${a}/${b} (${Math.round((100 * a) / b)}%)` : '-');
+
+function renderStats() {
+  const { gps: s, sim } = statsByMode(state.visits);
+  const line = (text, strong = false) => Object.assign(document.createElement(strong ? 'strong' : 'p'), { textContent: text });
+  const lines = [line(`현장(GPS) 촬영 ${s.shots}장 · 정답 기록 ${s.labeled}장`, true)];
+  if (s.labeled) lines.push(line(`위치만 판정 정답 ${ratio(s.position.correct, s.position.total)}`));
+  if (s.paired.total) lines.push(line(`방향 있는 ${s.paired.total}장 비교: 위치만 ${ratio(s.paired.position, s.paired.total)} · 위치+방향 ${ratio(s.paired.heading, s.paired.total)}`));
+  if (!s.labeled && s.shots) lines.push(line('설정에서 테스트 모드를 켜거나, 아래 로그를 탭해 실제 건물을 기록하면 정답률이 나와요.'));
+  if (sim.shots) lines.push(line(`시뮬레이션 ${sim.shots}장(정답 ${ratio(sim.position.correct, sim.labeled)})은 현장 통계에서 제외`));
+  if (unsavedCount()) lines.push(line(`⚠︎ 아직 저장되지 않은 항목 ${unsavedCount()}건 — 내보내기로 보관하세요`));
+  $('#stats').replaceChildren(...lines);
+}
+
+function renderShotLog() {
+  $('#shot-log').replaceChildren(
+    ...[...state.visits].reverse().map((v) => { // toReversed() needs Safari 16
+      const r = v.judgments[v.used];
+      const judged = v.buildingId ? `${nameOf(v.buildingId)} ${pct(r.ranked[0].p)}` : '건물 없음';
+      const time = new Date(v.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const b = choiceButton('', '', () => askTruth(v));
+      b.append(`${time} · ${v.mode === 'sim' ? '[시뮬] ' : ''}${judged} · ±${Math.round(v.fix.accuracy)}m${v.used === 'heading' ? ' · 방향' : ''} · `);
+      const right = v.truth && (v.buildingId ?? 'none') === v.truth;
+      b.append(v.truth ? Object.assign(document.createElement('span'), { className: right ? 'ok' : 'ng', textContent: `정답 ${truthName(v.truth)} ${right ? '✓' : '✗'}` }) : '정답 미기록');
+      const li = document.createElement('li');
+      li.append(b);
+      return li;
+    }),
+  );
+}
+
+// Thumbnails are read from storage (or the unsaved queue) only while the records dialog is open.
 let thumbUrls = [];
+async function showThumb(slot, id, alt) {
+  const blob = unsavedPhotos.get(id) ?? (await loadPhoto(id).catch(() => null));
+  if (!blob || !$('#records').open) return;
+  const url = URL.createObjectURL(blob);
+  thumbUrls.push(url);
+  slot.replaceWith(Object.assign(document.createElement('img'), { src: url, alt }));
+}
+
 function renderRecords() {
+  renderStats();
+  renderShotLog();
   $('#record-list').replaceChildren(
     ...state.buildings.map((b) => {
       const mine = state.visits.filter((v) => v.buildingId === b.id);
@@ -409,13 +578,9 @@ function renderRecords() {
         $('#records').close();
         view.focus(b.id);
       });
-      const photo = mine.findLast((v) => v.photo)?.photo;
-      let thumb = document.createElement('span');
-      if (photo) {
-        const url = URL.createObjectURL(photo);
-        thumbUrls.push(url);
-        thumb = Object.assign(document.createElement('img'), { src: url, alt: `${b.name} 사진` });
-      }
+      const thumb = document.createElement('span');
+      const last = mine.findLast((v) => v.photoBytes);
+      if (last) showThumb(thumb, last.id, `${b.name} 사진`);
       li.append(mark, name, thumb);
       return li;
     }),
@@ -437,7 +602,10 @@ function bindControls() {
   $('#camera-shutter').addEventListener('click', shutter);
   $('#camera-close').addEventListener('click', closeShutter);
   // A backgrounded page must not keep the camera (Android keeps capturing; iOS returns a muted track).
-  document.addEventListener('visibilitychange', () => document.hidden && !$('#camera').hidden && closeShutter());
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && !$('#camera').hidden) closeShutter();
+    if (!document.hidden && unsavedCount()) flush(); // iOS may have dropped the storage connection
+  });
   $('#open-settings').addEventListener('click', () => {
     state.placing = false; // opening settings cancels a pending "tap to place"
     document.body.classList.remove('placing');
@@ -484,14 +652,32 @@ function bindControls() {
     document.body.classList.add('placing');
     toast(`${state.area.name} 중심을 둘 곳을 지도에서 탭하세요`);
   });
-  $('#rotation').addEventListener('input', (e) => setPlacement({ ...state.placement, rotationDeg: Number(e.target.value) }));
+  // Dragging the slider redraws at most once per frame and saves when released.
+  let rotateFrame = 0;
+  $('#rotation').addEventListener('input', (e) => {
+    state.placement = { ...state.placement, rotationDeg: Number(e.target.value) };
+    $('#rotation-out').textContent = e.target.value;
+    rotateFrame ||= requestAnimationFrame(() => {
+      rotateFrame = 0;
+      setPlacement(state.placement, { save: false });
+    });
+  });
+  $('#rotation').addEventListener('change', () => saveSetting(placementKey(), state.placement));
   $('#place-reset').addEventListener('click', () => {
     setPlacement(realPlacement());
     view.fit();
   });
+  $('#test-mode').addEventListener('change', (e) => {
+    state.testMode = e.target.checked;
+    saveSetting('testMode', state.testMode);
+  });
+  $('#export').addEventListener('click', exportVisits);
   $('#reset').addEventListener('click', () => {
-    if (!confirm('방문 기록을 모두 지울까요?')) return;
+    if (!confirm('방문 기록을 모두 지울까요? 내보내지 않은 기록은 되돌릴 수 없어요.')) return;
     state.visits = [];
+    unsaved.clear();
+    unsavedPhotos.clear();
+    clearAll().catch(() => toast('저장된 기록을 지우지 못했어요'));
     refresh();
   });
 }
@@ -512,6 +698,16 @@ async function start() {
   state.buildings = withZones(area.buildings);
   for (const el of [$('#title'), $('#start-title')]) el.textContent = `${area.name} 방문 체크`;
   document.title = `${area.name} 방문 체크`;
+  state.testMode = loadSetting('testMode', false);
+  $('#test-mode').checked = state.testMode;
+  // Storage must never block the app: shots taken before this resolves are merged in.
+  loadVisits()
+    .then((loaded) => {
+      const fresh = new Set(state.visits.map((v) => v.id));
+      state.visits = [...loaded.filter((v) => !fresh.has(v.id)), ...state.visits];
+      refresh();
+    })
+    .catch(() => toast('저장된 기록을 불러오지 못했어요 — 이 브라우저에서는 저장이 안 될 수 있어요'));
   const saved = loadSetting(placementKey(), null);
   setPlacement(validPlacement(saved) ? saved : realPlacement());
   view.fit();

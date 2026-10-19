@@ -79,6 +79,7 @@
         <label class="sim-only">방향 <output id="heading-out">0</output>°
           <input id="heading" type="range" min="0" max="359" step="1" value="0"></label>
         <label><input id="show-zones" type="checkbox" checked> 촬영 존 표시</label>
+        <label><input id="test-mode" type="checkbox"> 테스트 모드 — 촬영마다 실제 건물 기록</label>
       </fieldset>
       <fieldset>
         <legend>데이터</legend>
@@ -91,8 +92,22 @@
   <dialog id="records">
     <form method="dialog">
       <h2>방문 기록</h2>
+      <div id="stats" class="stats"></div>
       <ul id="record-list" class="record-list"></ul>
+      <h3>촬영 로그 <span class="sub">— 탭해서 실제 건물 기록</span></h3>
+      <ol id="shot-log" class="shot-log" reversed></ol>
+      <button id="export" type="button" class="secondary">기록 내보내기 (JSON)</button>
+      <p class="sub">사진은 이 기기에만 남아요. Safari는 오래 안 쓰면 사이트 데이터를 지울 수 있으니 테스트 후 내보내 두세요.</p>
       <button class="primary" value="close">닫기</button>
+    </form>
+  </dialog>
+
+  <dialog id="truth">
+    <form method="dialog">
+      <h2>실제로 찍은 건물은?</h2>
+      <p id="truth-judged" class="sub"></p>
+      <div id="truth-choices" class="choices"></div>
+      <button class="secondary" value="skip">건너뛰기</button>
     </form>
   </dialog>
 </body>

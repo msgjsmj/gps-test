@@ -228,6 +228,39 @@ body.placing #map { cursor: crosshair; outline: 4px solid var(--accent); outline
   cursor: pointer;
 }
 
+dialog { overflow: auto; }
+dialog h3 { margin: 4px 0 0; font-size: 15px; }
+
+.stats {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fefcbf;
+  font-size: 13px;
+}
+.stats p { margin: 0; }
+.stats strong { font-size: 15px; }
+
+.shot-log { margin: 0; padding: 0 0 0 24px; display: grid; gap: 4px; font-size: 13px; }
+.shot-log button { all: unset; cursor: pointer; display: block; padding: 6px 8px; border-radius: 8px; background: #f7fafc; }
+.shot-log .ok { color: var(--ok); font-weight: 700; }
+.shot-log .ng { color: var(--danger); font-weight: 700; }
+
+.choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.choices button {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 8px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+}
+.choices button.candidate { border-color: var(--accent); background: #fffff0; }
+.choices button.judged { border: 2px solid var(--brand); background: #feebc8; }
+.choices button.none { color: var(--muted); }
+
 .bldg-label {
   background: rgba(255, 255, 255, .8);
   border: 0;

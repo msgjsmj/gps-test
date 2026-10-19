@@ -59,5 +59,10 @@ export function captureFrame(video, quality = 0.85) {
   c.width = video.videoWidth;
   c.height = video.videoHeight;
   c.getContext('2d').drawImage(video, 0, 0);
-  return new Promise((resolve, reject) => c.toBlob((b) => (b ? resolve(b) : reject(new Error('encode failed'))), 'image/jpeg', quality));
+  return new Promise((resolve, reject) =>
+    c.toBlob((b) => {
+      c.width = c.height = 0; // release canvas memory (iOS caps the total)
+      b ? resolve(b) : reject(new Error('encode failed'));
+    }, 'image/jpeg', quality),
+  );
 }
