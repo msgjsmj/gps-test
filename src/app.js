@@ -451,20 +451,25 @@ function persistPhoto(id, blob) {
   flush();
 }
 
+let resetGeneration = 0; // a reset stops a flush that is still working through old items
+
 async function flush() {
   if (flushing) return (flushAgain = true);
   flushing = true;
+  const generation = resetGeneration;
   if (!persistenceAsked) {
     persistenceAsked = true;
     requestPersistence();
   }
   for (const [id, snap] of [...unsaved]) {
+    if (generation !== resetGeneration) break;
     try {
       await saveVisit(snap);
       if (unsaved.get(id) === snap) unsaved.delete(id);
     } catch {}
   }
   for (const [id, blob] of [...unsavedPhotos]) {
+    if (generation !== resetGeneration) break;
     try {
       await savePhoto(id, blob);
       if (unsavedPhotos.get(id) === blob) unsavedPhotos.delete(id);
@@ -480,6 +485,7 @@ async function flush() {
     notice('기록 저장에 실패했어요', '다시 시도하는 중이에요. 상태줄의 "미저장 N건"이 0이 될 때까지 기록이 이 화면에만 있어요.\n방문 기록 화면에서 "기록 내보내기"로 꼭 보관하세요.');
   }
   scheduleRefresh();
+  if ($('#records').open) renderStats(); // its unsaved warning must not outlive the save
 }
 
 const choiceButton = (label, className, onClick) => {
@@ -524,9 +530,9 @@ const truthName = (truth) => (truth === 'none' ? '건물 아님' : nameOf(truth)
 
 function setTruth(visit, truth) {
   truthTarget = null;
-  refresh();
   visit.truth = truth;
   visit.truthAt = new Date().toISOString();
+  refresh(); // progress and colours count the truth right away
   $('#truth').close();
   persist(visit);
   const right = (visit.buildingId ?? 'none') === truth;
@@ -812,6 +818,7 @@ function bindControls() {
   $('#reset').addEventListener('click', () => {
     if (!confirm('방문 기록을 모두 지울까요? 내보내지 않은 기록은 되돌릴 수 없어요.')) return;
     state.visits = [];
+    resetGeneration++;
     unsaved.clear();
     unsavedPhotos.clear();
     clearAll().catch(() => toast('저장된 기록을 지우지 못했어요'));
