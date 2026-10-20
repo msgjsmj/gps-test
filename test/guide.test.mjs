@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { buildAreas } from '../src/areas.js';
 
 const read = (name) => JSON.parse(readFileSync(new URL(`../data/${name}`, import.meta.url)));
 const area = read('deoksugung.json');
@@ -15,9 +16,7 @@ test('every building opens a description with text', () => {
   }
 });
 
-test('every area has a credited photo that exists', async () => {
-  const { existsSync } = await import('node:fs');
-  const { buildAreas } = await import('../src/areas.js');
+test('every area has a credited photo that exists', () => {
   const photos = read('place-photos.json');
   for (const a of buildAreas(guide.places, guide.buildingPlace, area.buildings)) {
     const photo = photos[a.key];
