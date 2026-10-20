@@ -121,7 +121,7 @@ export function createMapView(el, { onMapClick, onBuildingClick, onLocate }) {
       me.accuracy.setLatLng(center).setRadius(fix.accuracy);
       me.dot.setLatLng(center);
       if (fix.heading === null || fix.heading === undefined) {
-        me.wedge.remove();
+        meLayer.removeLayer(me.wedge); // not wedge.remove(): the group would still claim it and never re-add it
         return;
       }
       me.wedge.setLatLngs([
