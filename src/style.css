@@ -47,6 +47,8 @@ body {
 
 #map { min-height: 0; }
 
+.app-version { margin: 0; font-size: 10px; line-height: 1; color: var(--muted); text-align: center; opacity: .7; }
+.sheet .app-version { margin-top: -4px; }
 .sheet {
   display: grid;
   gap: 10px;

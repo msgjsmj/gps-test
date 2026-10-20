@@ -30,6 +30,7 @@
     </div>
     <button id="preview-action" class="secondary" type="button" hidden></button>
     <button id="shoot" class="shoot" type="button">📷 촬영</button>
+    <p class="app-version"></p>
   </section>
 
   <div id="toast" class="toast" role="status" hidden></div>
@@ -60,6 +61,7 @@
     <button id="start-sim" class="secondary big" type="button" disabled>시뮬레이션으로 둘러보기</button>
     <p class="sub">지도를 탭한 곳을 내 위치로 써요. 집이나 PC에서 판정을 미리 보기 좋아요.</p>
     <button id="start-help" class="link-btn" type="button">처음이라면 — 사용법 보기</button>
+    <p class="app-version"></p>
   </section>
 
   <section id="camera" class="overlay camera" hidden>
@@ -141,7 +143,7 @@
         <ol>
           <li>시작 화면에서 "시뮬레이션으로 둘러보기"</li>
           <li>지도를 탭하면 그곳이 내 위치예요. 아래에 "지금 찍으면 → 건물 (확률)"이 떠요.</li>
-          <li>📷 촬영 → 그 건물이 초록색으로 체크되고 위의 n / 12가 늘어요.</li>
+          <li>📷 촬영 → 그 건물이 초록색으로 체크되고 위의 진행률(n / 전체)이 늘어요.</li>
         </ol>
         <p class="sub">⚙︎ 설정에서 GPS 오차·방향을 바꾸면 판정이 어떻게 달라지는지 볼 수 있어요.</p>
       </details>
@@ -153,7 +155,7 @@
           <li>배치에서 멀리 있으면 아래에 "내 주변으로 건물 배치 옮기기" 버튼이 떠요. 누른 뒤 회전으로 공원 모양에 맞추고 "완료". (⚙︎ 설정 → 배치 옮기기·회전으로도 할 수 있어요)</li>
           <li>⚙︎ 설정 → "테스트 모드" 켜기. 판정과 내 위치 점이 숨겨져요(◎는 배치 전체를 보여 줘요) — 지도 바탕(길·나무·시설)을 보고 가상 건물 앞에 서세요.</li>
           <li>건물 쪽을 향해 📷 촬영 → "실제로 찍은 건물은?"에서 정답 선택 → 그때 판정이 맞았는지 보여요.</li>
-          <li>위의 n / 12 → 정답률 확인 → "기록 내보내기 (JSON)"로 보관</li>
+          <li>위의 진행률(n / 전체) → 정답률 확인 → "기록 내보내기 (JSON)"로 보관</li>
         </ol>
       </details>
       <details>
@@ -163,7 +165,7 @@
           <li>나머지는 동네 테스트의 3~5번과 같아요.</li>
         </ol>
         <p class="sub">실제 덕수궁에서는 건물이 <strong>닫힌 채(회색)</strong> 시작하고 촬영 존도 숨겨져요. 찍으면 그 건물이 열려요 — 테스트 모드에서는 정답을 기록한 순간, 테스트 모드를 끄면 촬영하자마자 판정된 건물이 열려요.</p>
-        <p class="sub">진행률은 0 / 12부터 다시 세요. 이전 기록은 지워지지 않고 내보내기에 모두 들어가요.</p>
+        <p class="sub">진행률은 0부터 다시 세요. 이전 기록은 지워지지 않고 내보내기에 모두 들어가요.</p>
       </details>
 
       <h3>지도 보는 법</h3>
@@ -198,6 +200,13 @@
   <script>
     // Plain script: runs even when the app's modules never start, so the start screen is never a dead end.
     (function () {
+      // Version = when this page was deployed. GitHub Pages stamps every file of a deploy with the
+      // build time as Last-Modified, so this changes on every deploy with nothing to bump by hand.
+      // Set here (not in the app modules) so it shows even when the app fails to start.
+      var built = new Date(document.lastModified);
+      var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+      var version = isNaN(built) ? '' : '버전 ' + built.getFullYear() + '.' + pad(built.getMonth() + 1) + '.' + pad(built.getDate()) + ' ' + pad(built.getHours()) + ':' + pad(built.getMinutes());
+      document.querySelectorAll('.app-version').forEach(function (el) { el.textContent = version; });
       var HEALED_AT = 'gps-test:healedAt';
       // GitHub Pages lets a browser cache each file for 10 minutes, so right after a deploy a phone can
       // run new files mixed with stale ones, which breaks start-up — and a normal reload keeps the stale

@@ -85,7 +85,7 @@ export function createMapView(el, { onMapClick, onBuildingClick, onLocate }) {
       for (const b of buildings) {
         zoneShapes.set(b.id, b.zones.map((z) => L.polygon(z.map(ll), STYLE.zone).addTo(zoneLayer)));
         const shape = L.polygon(b.footprint.map(ll), STYLE.building)
-          .bindTooltip(b.name, { permanent: true, direction: 'center', className: 'bldg-label' })
+          .bindTooltip(b.label ?? b.name, { permanent: true, direction: 'center', className: 'bldg-label' })
           .on('click', (e) => {
             L.DomEvent.stopPropagation(e);
             onBuildingClick?.(b.id, toLocal(placement, { lat: e.latlng.lat, lng: e.latlng.lng }));

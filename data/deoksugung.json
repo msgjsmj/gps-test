@@ -1,8 +1,8 @@
 {
  "id": "deoksugung",
  "name": "덕수궁",
- "source": "© OpenStreetMap contributors (ODbL), fetched 2026-10-19",
- "declination": -9.0,
+ "source": "© OpenStreetMap contributors (ODbL), fetched 2026-10-20",
+ "declination": -9,
  "anchor": {
   "lat": 37.566134,
   "lng": 126.975054
@@ -403,6 +403,23 @@
     [-138.6, 119.2],
     [-140.8, 119.1],
     [-141.6, 134.9]
+   ]
+  },
+  {
+   "id": "junghwajeon-haenggak",
+   "name": "중화전 행각",
+   "label": "행각",
+   "facing": [180, 0],
+   "facingAssumed": true,
+   "identityAssumed": true,
+   "osm": "way/381755271",
+   "footprint": [
+    [-4.4, -98],
+    [5.1, -100],
+    [2.1, -113.9],
+    [-10, -111.3],
+    [-9, -106.3],
+    [-6.3, -106.9]
    ]
   }
  ]

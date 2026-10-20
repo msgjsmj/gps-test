@@ -14,7 +14,8 @@ const AREA = {
   // Compass readings are magnetic; true bearing = magnetic + declination.
   declination: -9.0,
   // facing: bearings people photograph the building from (180 = its south face).
-  // facingAssumed marks values not yet checked on site.
+  // facingAssumed marks values not yet checked on site; identityAssumed marks an unnamed OSM
+  // building we identified ourselves; label is a shorter map label where names would collide.
   buildings: [
     { id: 'daehanmun', name: '대한문', osm: 'way/377289797', facing: [90, 270] },
     { id: 'gwangmyeongmun', name: '광명문', osm: 'way/377289803', facing: [180] },
@@ -28,6 +29,11 @@ const AREA = {
     { id: 'jeonggwanheon', name: '정관헌', osm: 'way/381755268', facing: [180], facingAssumed: true },
     { id: 'seokjojeon', name: '석조전', osm: 'relation/19357693', facing: [180] },
     { id: 'dondeokjeon', name: '돈덕전', osm: 'way/517072312', facing: [180], facingAssumed: true },
+    // The surviving corner of the corridor that once enclosed Junghwajeon's courtyard ("a few quarters
+    // survived on the right side of Junghwamun", MMCA). Unnamed in OSM (historic, joseon), 13 m east of
+    // Junghwamun, L-shaped. Shot from outside (south) or from the courtyard (north); its west face is
+    // left out because that zone would cover Junghwamun.
+    { id: 'junghwajeon-haenggak', name: '중화전 행각', label: '행각', osm: 'way/381755271', facing: [180, 0], facingAssumed: true, identityAssumed: true },
   ],
 };
 
@@ -36,14 +42,18 @@ const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.p
 async function overpass(query) {
   const errors = [];
   for (const url of OVERPASS) {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'User-Agent': 'gps-test-prototype/0.1', Accept: 'application/json' },
-      body: new URLSearchParams({ data: query }),
-      signal: AbortSignal.timeout(60_000),
-    });
-    if (res.ok) return (await res.json()).elements;
-    errors.push(`${url} ${res.status}`);
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'User-Agent': 'gps-test-prototype/0.1', Accept: 'application/json' },
+        body: new URLSearchParams({ data: query }),
+        signal: AbortSignal.timeout(60_000),
+      });
+      if (res.ok) return (await res.json()).elements;
+      errors.push(`${url} ${res.status}`);
+    } catch (e) {
+      errors.push(`${url} ${e.name}`); // timeouts and network errors fall through to the next mirror
+    }
   }
   throw new Error(`Overpass failed: ${errors.join(', ')}`);
 }
