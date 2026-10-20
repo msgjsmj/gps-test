@@ -196,7 +196,7 @@ function previewText(obs, j) {
   }
   const acc = `오차 ±${Math.round(obs.fix.accuracy)}m`;
   // With "use heading" on, say whether it is actually in play — a missing compass silently means position only.
-  const how = state.useHeading ? (j.used === 'heading' ? '방향 반영' : '방향 없음 → 위치로 판정') : null;
+  const how = state.useHeading ? (obs.localHeading !== null ? '방향 반영' : '방향 없음 → 위치로 판정') : null;
   // Accuracy first: a ±km fix would otherwise read as "you are far from the layout".
   if (obs.fix.accuracy > POOR_ACCURACY) return poorAccuracy(obs);
   const far = farFromLayout(obs);
@@ -228,9 +228,13 @@ function sensorParts(obs) {
   return parts;
 }
 
+// The live preview judgment only runs when its answer is shown: not in blind test mode, and not
+// with a coarse or far-off fix (it costs up to ~30 ms on a laptop, several times that on a phone).
+const previewShowsJudgment = (obs) => !state.testMode && obs.fix.accuracy <= POOR_ACCURACY && !farFromLayout(obs);
+
 function refresh() {
   const obs = observe();
-  const j = obs && judgeBoth(obs, { preview: true });
+  const j = obs && previewShowsJudgment(obs) ? judgeBoth(obs, { preview: true }) : null;
   // Blind test mode hides the own-position dot too: standing where the dot sits inside a zone
   // would make position-only accuracy circular (the judgment uses that same dot).
   view.setPosition((!state.testMode || state.placing) && obs && { point: obs.point, accuracy: obs.fix.accuracy, heading: obs.localHeading });
@@ -561,7 +565,28 @@ const localStamp = (d = new Date()) => {
 };
 
 // Share sheet on phones (AirDrop, Files, messengers); plain download elsewhere.
+// Storage must never block the app: shots taken before this resolves are merged in. A failed
+// load is retried when the page comes back, and export says when stored visits are missing.
+let visitsLoaded = false;
+function loadStoredVisits() {
+  const loadedFor = resetGeneration;
+  return loadVisits()
+    .then((loaded) => {
+      if (loadedFor !== resetGeneration) return; // reset while loading: the old visits are gone
+      const fresh = new Set(state.visits.map((v) => v.id));
+      state.visits = [...loaded.filter((v) => !fresh.has(v.id)), ...state.visits];
+      visitsLoaded = true;
+      refresh();
+    })
+    .catch(() => toast('저장된 기록을 불러오지 못했어요 — 다시 시도할게요. 이 브라우저에서는 저장이 안 될 수 있어요'));
+}
+
 function exportVisits() {
+  if (!visitsLoaded) {
+    loadStoredVisits();
+    if (!state.visits.length) return toast('저장된 기록을 아직 못 불러왔어요 — 잠시 뒤 다시 눌러 주세요');
+    toast('저장된 이전 기록을 못 불러와서 이번 세션 기록만 내보내요');
+  }
   if (!state.visits.length) return toast('내보낼 기록이 없어요');
   const payload = exportPayload(state.area, state.visits);
   const file = new File([JSON.stringify(payload, null, 1)], `gps-test-${state.area.id}-${localStamp()}.json`, { type: 'application/json' });
@@ -788,6 +813,7 @@ function bindControls() {
       state.gps.fix = null;
     }
     if (!document.hidden && unsavedCount()) flush(); // iOS may have dropped the storage connection
+    if (!document.hidden && !visitsLoaded) loadStoredVisits();
   });
   $('#open-settings').addEventListener('click', () => {
     stopPlacing();
@@ -895,6 +921,7 @@ async function start() {
     area = await res.json();
   } catch {
     $('#start-note').textContent = '건물 데이터를 불러오지 못했어요. 새로고침해 주세요.';
+    $('#start-note').dataset.error = 'true'; // the slow-start watchdog keeps this specific message
     return;
   }
   state.area = area;
@@ -906,16 +933,7 @@ async function start() {
   $('#test-mode').checked = state.testMode;
   state.useHeading = loadSetting('useHeading', false);
   $('#use-heading').checked = state.useHeading;
-  // Storage must never block the app: shots taken before this resolves are merged in.
-  const loadedFor = resetGeneration;
-  loadVisits()
-    .then((loaded) => {
-      if (loadedFor !== resetGeneration) return; // reset while loading: the old visits are gone
-      const fresh = new Set(state.visits.map((v) => v.id));
-      state.visits = [...loaded.filter((v) => !fresh.has(v.id)), ...state.visits];
-      refresh();
-    })
-    .catch(() => toast('저장된 기록을 불러오지 못했어요 — 이 브라우저에서는 저장이 안 될 수 있어요'));
+  loadStoredVisits();
   const saved = loadSetting(placementKey(), null);
   setPlacement(validPlacement(saved) ? saved : realPlacement());
   view.fit();

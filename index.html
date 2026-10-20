@@ -132,7 +132,7 @@
     setTimeout(function () {
       var button = document.getElementById('start-gps');
       var note = document.getElementById('start-note');
-      if (!button.disabled) return;
+      if (!button.disabled || note.dataset.error) return;
       note.dataset.default = note.textContent;
       note.textContent = '시작이 늦어지고 있어요. 계속 안 되면 새로고침해 주세요. (방금 업데이트됐다면 1~2분 뒤 다시)';
     }, 8000);
