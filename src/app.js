@@ -198,7 +198,7 @@ function previewText(obs, j) {
   // With "use heading" on, say whether it is actually in play — a missing compass silently means position only.
   const how = state.useHeading ? (j.used === 'heading' ? '방향 반영' : '방향 없음 → 위치로 판정') : null;
   // Accuracy first: a ±km fix would otherwise read as "you are far from the layout".
-  if (obs.fix.accuracy > POOR_ACCURACY) return [`위치가 부정확해요 (${acc})`, '하늘이 트인 곳에서 잠시 기다려 주세요. iPhone은 "정확한 위치"가 켜져 있어야 해요'];
+  if (obs.fix.accuracy > POOR_ACCURACY) return poorAccuracy(obs);
   const far = farFromLayout(obs);
   if (far) return far;
   // Test mode is blind: showing the would-be answer would let the tester walk until it agrees.
@@ -264,7 +264,7 @@ const FAR_FROM_LAYOUT = 500; // meters from the layout centre; beyond this nothi
 const CACHED_FIX_AGE = 120_000; // ms by the fix's own clock; generous for clock skew
 const BLIND_POSITION = '테스트 모드에서는 내 위치를 숨겨요 — 지도 바탕(길·나무·시설)을 보고 서 주세요';
 const PLACE_MAX_ACCURACY = 30; // meters; centering the layout on a worse fix misplaces it
-const LOCATION_HELP = 'iPhone: 설정 → 개인정보 보호 및 보안 → 위치 서비스 → Safari 웹 사이트 → "앱을 사용하는 동안", "정확한 위치" 켬\nAndroid Chrome: 주소창 왼쪽 아이콘 → 권한 → 위치 허용\n그다음 페이지를 새로고침하세요.';
+const LOCATION_HELP = 'iPhone: 설정 → 개인정보 보호 및 보안 → 위치 서비스 → Safari 웹 사이트 → "앱을 사용하는 동안", "정확한 위치" 켬\nAndroid Chrome: 주소창 왼쪽 아이콘 → 권한 → 위치 허용, 그리고 설정 → 애플리케이션 → Chrome → 권한 → 위치 → "정확한 위치 사용" 켬\n그다음 페이지를 새로고침하세요.';
 
 function startGps() {
   if (state.gps.stop) return;
@@ -594,11 +594,19 @@ function farFromLayout(obs) {
   return [`${isReal(state.placement) ? state.area.name : '옮긴 배치'}에서 ${(away / 1000).toFixed(1)}km 떨어져 있어요`, fix];
 }
 
+// A coarse fix may only look far: then say so (as the preview does) instead of suggesting a
+// placement change, which would invite resetting a good layout.
 const refuseFar = (obs) => {
   const far = obs && farFromLayout(obs);
-  if (far) toast(`기록하지 않았어요 — ${far[0]}. ${far[1]}`);
-  return !!far;
+  if (!far) return false;
+  const [headline, fix] = obs.fix.accuracy > POOR_ACCURACY ? poorAccuracy(obs) : far;
+  toast(`기록하지 않았어요 — ${headline}. ${fix}`);
+  return true;
 };
+
+function poorAccuracy(obs) {
+  return [`위치가 부정확해요 (오차 ±${Math.round(obs.fix.accuracy)}m)`, '하늘이 트인 곳에서 잠시 기다려 주세요. iPhone은 "정확한 위치", Android는 "정확한 위치 사용"이 켜져 있어야 해요'];
+}
 
 const noFixMessage = () => (state.mode === 'sim' ? '먼저 지도를 탭해서 위치를 정하세요' : state.gps.error ?? '아직 위치를 못 잡았어요');
 
@@ -825,6 +833,7 @@ function bindControls() {
   });
   $('#use-heading').addEventListener('change', (e) => {
     state.useHeading = e.target.checked;
+    saveSetting('useHeading', state.useHeading); // survives a tab reload mid-test, like test mode
     refresh();
   });
   $('#show-zones').addEventListener('change', (e) => {
@@ -895,6 +904,8 @@ async function start() {
   document.title = `${area.name} 방문 체크`;
   state.testMode = loadSetting('testMode', false);
   $('#test-mode').checked = state.testMode;
+  state.useHeading = loadSetting('useHeading', false);
+  $('#use-heading').checked = state.useHeading;
   // Storage must never block the app: shots taken before this resolves are merged in.
   const loadedFor = resetGeneration;
   loadVisits()
