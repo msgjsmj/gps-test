@@ -570,6 +570,7 @@ async function openShutter() {
     // A denied camera must not silently turn shots into un-aimed records.
     if (e.name === 'NotAllowedError' || e.name === 'SecurityError') return notice('카메라 권한이 꺼져 있어요', CAMERA_HELP);
     if (['NotFoundError', 'OverconstrainedError', 'NotSupportedError'].includes(e.name)) return shootSimulated(); // no camera here (desktop, headless)
+    if (e.name === 'CameraPlayFailed') return toast('카메라 화면을 시작하지 못했어요 — 다시 눌러 주세요');
     toast('카메라를 열 수 없어요 — 다른 앱이 카메라를 쓰고 있지 않은지 확인해 주세요');
   }
 }

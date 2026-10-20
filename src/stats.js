@@ -41,7 +41,7 @@ export function statsByTest(visits, areaAnchor) {
 // Visits are metadata only (photos stay on the device), so they export as-is.
 export function exportPayload(area, visits, exportedAt = new Date()) {
   return {
-    format: 'gps-test-visits/1',
+    format: 'gps-test-visits/2', // 2: visits carry `blind`; stats keyed by testContext
     exportedAt: exportedAt.toISOString(),
     area: { id: area.id, name: area.name, anchor: area.anchor, declination: area.declination, source: area.source },
     stats: statsByTest(visits, area.anchor), // keyed by testContext(); recompute freely from visits

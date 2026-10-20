@@ -8,6 +8,9 @@ let generation = 0;
 export const cameraSupported = () => !!navigator.mediaDevices?.getUserMedia;
 
 const cancelled = () => Object.assign(new Error('camera open cancelled'), { name: 'CameraCancelled' });
+// play() can reject with NotAllowedError for reasons unrelated to permission (autoplay rules),
+// so its failures get their own name instead of looking like a denied camera.
+const playFailed = (cause) => Object.assign(new Error(`camera preview did not start: ${cause?.name}`), { name: 'CameraPlayFailed', cause });
 
 function stop(video) {
   stream?.getTracks().forEach((t) => t.stop());
@@ -40,7 +43,7 @@ export async function openCamera(video, onEnded) {
       });
     }
   } catch (e) {
-    throw mine === generation ? e : cancelled();
+    throw mine === generation ? playFailed(e) : cancelled();
   }
   if (mine !== generation) throw cancelled();
 }

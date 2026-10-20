@@ -40,17 +40,24 @@ function openDb() {
   return dbPromise;
 }
 
-// One request in its own transaction, resolved after commit. A failure drops the
-// cached connection (it may be dead) and retries once on a fresh one.
+const TIMEOUT_MS = 5000; // iOS WebKit can leave an IndexedDB request hanging forever
+
+const withTimeout = (promise) =>
+  Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error('IndexedDB timed out')), TIMEOUT_MS))]);
+
+// One request in its own transaction, resolved after commit. A failure or a hang drops
+// the cached connection (it may be dead) and retries once on a fresh one.
 async function run(store, mode, makeRequest, retry = true) {
   try {
-    const db = await openDb();
-    return await new Promise((resolve, reject) => {
-      const tx = db.transaction(store, mode);
-      const req = makeRequest(tx.objectStore(store));
-      tx.oncomplete = () => resolve(req.result);
-      tx.onerror = tx.onabort = () => reject(tx.error ?? new Error('transaction aborted'));
-    });
+    const db = await withTimeout(openDb());
+    return await withTimeout(
+      new Promise((resolve, reject) => {
+        const tx = db.transaction(store, mode);
+        const req = makeRequest(tx.objectStore(store));
+        tx.oncomplete = () => resolve(req.result);
+        tx.onerror = tx.onabort = () => reject(tx.error ?? new Error('transaction aborted'));
+      }),
+    );
   } catch (e) {
     dbPromise = undefined;
     if (retry) return run(store, mode, makeRequest, false);
