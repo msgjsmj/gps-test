@@ -623,7 +623,9 @@ function showCard(key, { fresh = false } = {}) {
   if (photo) {
     $('#card-photo').src = photo.file;
     $('#card-photo').alt = `${place.name} 사진`;
-    $('#card-credit').replaceChildren('사진: ', Object.assign(document.createElement('a'), { href: photo.page, target: '_blank', rel: 'noopener', textContent: `${photo.author} · ${photo.license}` }));
+    // CC attribution: author (linked to the source page) and license (linked to its text).
+    const link = (href, textContent) => Object.assign(document.createElement('a'), { href, textContent, target: '_blank', rel: 'noopener' });
+    $('#card-credit').replaceChildren('사진: ', link(photo.page, photo.author), ' · ', photo.licenseUrl ? link(photo.licenseUrl, photo.license) : photo.license, ' · 위키미디어 공용');
   }
   $('#card-fresh').hidden = !fresh;
   $('#card-name').textContent = place.name;

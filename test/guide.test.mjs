@@ -14,3 +14,15 @@ test('every building opens a description with text', () => {
     assert.ok(place.summary && place.paragraphs.length, `${place.key} is empty`);
   }
 });
+
+test('every area has a credited photo that exists', async () => {
+  const { existsSync } = await import('node:fs');
+  const { buildAreas } = await import('../src/areas.js');
+  const photos = read('place-photos.json');
+  for (const a of buildAreas(guide.places, guide.buildingPlace, area.buildings)) {
+    const photo = photos[a.key];
+    assert.ok(photo, `${a.key} has no photo`);
+    assert.ok(existsSync(new URL(`../${photo.file}`, import.meta.url)), `${photo.file} is missing`);
+    assert.ok(photo.author && photo.license && photo.page, `${a.key} lacks its credit`);
+  }
+});
