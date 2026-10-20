@@ -85,7 +85,10 @@ function startPlacing() {
   document.body.classList.add('placing');
   $('#place-bar').hidden = false;
   view.map.doubleClickZoom.disable(); // every tap places; a double tap must not also zoom
-  fitUnderBar();
+  // First placement in a park: the layout is still kilometres away, so start where the tester is.
+  const obs = state.mode === 'gps' && observe();
+  if (obs && dist(obs.point, [0, 0]) > 500) view.panTo(obs.point, 17);
+  else fitUnderBar();
   refresh(); // shows the own-position dot even in blind test mode while placing
 }
 
@@ -194,7 +197,9 @@ function previewText(obs, j) {
   if (obs.fix.accuracy > POOR_ACCURACY) return [`위치가 부정확해요 (${acc})`, '하늘이 트인 곳에서 잠시 기다려 주세요. iPhone은 "정확한 위치"가 켜져 있어야 해요'];
   const away = dist(obs.point, [0, 0]);
   if (away > 500) {
-    const fix = isReal(state.placement) ? '동네에서 테스트하려면 ⚙︎ 설정 → 배치 옮기기' : '실제 궁이면 ⚙︎ 설정 → 실제 위치로 되돌리기';
+    const fix = isReal(state.placement)
+      ? '동네에서 테스트하려면 ⚙︎ 설정 → 배치 옮기기·회전'
+      : '실제 궁이면 ⚙︎ 설정 → 실제 위치로 되돌리기 · 동네면 ⚙︎ 설정 → 배치 옮기기·회전';
     return [`${isReal(state.placement) ? state.area.name : '옮긴 배치'}에서 ${(away / 1000).toFixed(1)}km 떨어져 있어요`, fix];
   }
   // Test mode is blind: showing the would-be answer would let the tester walk until it agrees.
@@ -483,6 +488,20 @@ const choiceButton = (label, className, onClick) => {
   return b;
 };
 
+// The photo itself is the tester's memory aid when tagging later from the log.
+let truthPhotoUrl = null;
+async function showTruthPhoto(visit) {
+  const img = $('#truth-photo');
+  img.hidden = true;
+  if (!visit.photoBytes) return;
+  const blob = unsavedPhotos.get(visit.id) ?? (await loadPhoto(visit.id).catch(() => null));
+  if (!blob || truthTarget !== visit) return; // dialog moved on meanwhile
+  if (truthPhotoUrl) URL.revokeObjectURL(truthPhotoUrl);
+  truthPhotoUrl = URL.createObjectURL(blob);
+  img.src = truthPhotoUrl;
+  img.hidden = false;
+}
+
 // Nearby candidates (from either judgment) first, in data order, then every other building.
 // The judgment itself stays hidden until a choice is made, so it cannot steer the answer.
 function askTruth(visit) {
@@ -491,7 +510,9 @@ function askTruth(visit) {
   const order = state.buildings.map((b) => b.id);
   const candidates = order.filter((id) => ranked.has(id));
   const rest = order.filter((id) => !ranked.has(id));
-  $('#truth-judged').textContent = visit.truth ? `기록된 정답: ${truthName(visit.truth)}` : '판정 결과는 고른 뒤에 보여드려요';
+  const time = new Date(visit.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  $('#truth-judged').textContent = `${time} 촬영 · ${visit.truth ? `기록된 정답: ${truthName(visit.truth)}` : '판정 결과는 고른 뒤에 보여드려요'}`;
+  showTruthPhoto(visit);
   $('#truth-choices').replaceChildren(
     ...[...candidates, ...rest].map((id) => choiceButton(nameOf(id), candidates.includes(id) ? 'candidate' : '', () => setTruth(visit, id))),
     choiceButton('건물 아님', 'none', () => setTruth(visit, 'none')),
@@ -635,7 +656,8 @@ function renderShotLog() {
   $('#shot-log').replaceChildren(
     ...[...state.visits].reverse().map((v) => { // toReversed() needs Safari 16
       const r = v.judgments[v.used];
-      const judged = v.buildingId ? `${nameOf(v.buildingId)} ${pct(r.ranked[0].p)}` : '건물 없음';
+      // An untagged blind shot keeps its judgment hidden, or tagging it later would just copy the judgment.
+      const judged = v.blind && !v.truth ? '판정 숨김' : v.buildingId ? `${nameOf(v.buildingId)} ${pct(r.ranked[0].p)}` : '건물 없음';
       const time = new Date(v.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       const b = choiceButton('', '', () => askTruth(v));
       const tag = inCurrentTest(v) ? '' : `[다른 테스트${v.mode === 'sim' ? '·시뮬' : ''}] `;
@@ -715,6 +737,9 @@ function bindControls() {
     $('#records').showModal();
   });
   $('#truth').addEventListener('close', () => {
+    if (truthPhotoUrl) URL.revokeObjectURL(truthPhotoUrl);
+    truthPhotoUrl = null;
+    $('#truth-photo').hidden = true;
     // Skipped (button or Esc): still tell the tester what was judged.
     if (!truthTarget) return;
     const v = truthTarget;
@@ -752,7 +777,10 @@ function bindControls() {
   $('#place-here').addEventListener('click', () => {
     const fix = state.gps.fix;
     if (!fix || Date.now() - fix.receivedAt > MAX_FIX_AGE) return toast(noFixMessage());
-    if (fix.accuracy > PLACE_MAX_ACCURACY) return toast(`위치 오차가 커요(±${Math.round(fix.accuracy)}m) — 지도에서 내가 선 곳을 직접 탭하세요. iPhone은 "정확한 위치"를 켜 주세요`);
+    if (fix.accuracy > PLACE_MAX_ACCURACY) {
+      view.panTo(toLocal(state.placement, fix), 17);
+      return toast(`위치 오차가 커요(±${Math.round(fix.accuracy)}m) — 지도를 내 위치(파란 점)로 옮겼어요. 내가 선 곳을 탭하거나, 오차가 줄면 다시 누르세요`);
+    }
     placeAt(fix, { fit: true });
   });
   // Dragging the slider redraws at most once per frame and saves when released.
