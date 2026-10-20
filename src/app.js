@@ -251,7 +251,13 @@ function sensorParts(obs) {
   const fix = state.gps.fix;
   if (fix) parts.push(`GPS ±${Math.round(fix.accuracy)}m${ageNote(fix)}`);
   if (state.gps.error && fix) parts.push(state.gps.error);
-  if (obs?.heading) parts.push(`방향 ${Math.round(obs.heading.value)}°`);
+  // Shows the landscape correction, and whether the browser rotated its screen, so a field tester can
+  // check it against where the camera points (open question: does iOS compensate when the UI rotates?).
+  if (obs?.heading) {
+    const c = obs.heading.correction;
+    const rotated = c && (obs.heading.raw?.screenAngle ?? 0) % 360 !== 0 ? ', 화면 회전' : '';
+    parts.push(`방향 ${Math.round(obs.heading.value)}°${c ? ` (가로 ${c > 0 ? '+' : ''}${c}°${rotated})` : ''}`);
+  }
   else if (state.compass.denied) parts.push('방향 권한 거부됨');
   else if (state.compass.stop && state.compass.reading) parts.push('방향 끊김');
   else if (state.compass.stop) parts.push(Date.now() - state.compass.startedAt > 5000 ? '나침반 응답 없음 — 폰을 8자로 움직여 보세요' : '방향 대기 중');
