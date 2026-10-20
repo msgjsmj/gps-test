@@ -26,15 +26,28 @@ test('an area leads on the sum of its buildings', () => {
 });
 
 test('an area opens once, after leading without a break for the dwell time', () => {
-  const d = createDwell(2500);
+  const d = createDwell(3000);
   assert.equal(d.update('A', 0), null);
   assert.equal(d.update('A', 2000), null);
-  assert.equal(d.remaining(2000), 500);
-  assert.equal(d.update('A', 2500), 'A');
+  assert.equal(d.remaining(), 1000);
+  assert.equal(d.update('A', 3000), 'A');
   assert.equal(d.update('A', 9000), null); // only once while it keeps leading
   assert.equal(d.update(null, 9500), null); // stepped out
   assert.equal(d.update('A', 10_000), null); // back in: the clock starts over
   assert.equal(d.update('B', 11_000), null); // another area takes the lead before A's time is up
-  assert.equal(d.update('B', 13_400), null);
-  assert.equal(d.update('B', 13_500), 'B');
+  assert.equal(d.update('B', 13_900), null);
+  assert.equal(d.update('B', 14_000), 'B');
+});
+
+test('aiming runs the clock faster, from the moment it starts', () => {
+  const aimed = createDwell(3000);
+  assert.equal(aimed.update('A', 0, 2), null);
+  assert.equal(aimed.update('A', 1000, 2), null);
+  assert.equal(aimed.remaining(), 500);
+  assert.equal(aimed.update('A', 1500, 2), 'A'); // 1.5 s instead of 3
+  const mixed = createDwell(3000);
+  assert.equal(mixed.update('A', 0, 1), null);
+  assert.equal(mixed.update('A', 1000, 2), null); // 1 s at normal speed, then aimed
+  assert.equal(mixed.update('A', 1900, 2), null);
+  assert.equal(mixed.update('A', 2000, 1), 'A'); // 1000 + 2 × 1000 = 3000
 });

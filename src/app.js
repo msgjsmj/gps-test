@@ -181,8 +181,8 @@ function observe() {
   };
 }
 
-// Both judgments every time, so position-only and position+heading can be compared afterwards;
-// the heading one decides whenever there is a heading (no compass → position only).
+// Both judgments every time: position alone picks the area (see locate), position+heading (when
+// there is a heading) only speeds its opening up; both are recorded so they can be compared later.
 // The live check reuses results while inputs are unchanged (heading in 2° steps); an opening is
 // recorded with an exact judgment.
 const cache = { position: { key: '', result: null }, heading: { key: '', result: null } };
@@ -204,8 +204,16 @@ function judgeBoth(obs, { preview = false } = {}) {
       heading = judge({ ...input, heading: obs.localHeading });
     }
   }
-  const used = heading ? 'heading' : 'position';
-  return { position, heading, used, result: used === 'heading' ? heading : position };
+  return { position, heading };
+}
+
+// The area the visitor is in, by position alone, and whether the phone also points at it (the
+// position+heading judgment leads the same area clearly): then its dwell runs faster.
+function locate(j) {
+  const lead = leadingArea(j.position, state.guide.buildingPlace);
+  const current = lead && lead.p >= AREA_DEFAULTS.minProbability ? lead.key : null;
+  const aim = current && j.heading && leadingArea(j.heading, state.guide.buildingPlace);
+  return { current, p: lead?.p ?? 0, aimed: !!aim && aim.key === current && aim.p >= AREA_DEFAULTS.aimProbability };
 }
 
 // ---- rendering ------------------------------------------------------------
@@ -222,7 +230,7 @@ const secondsAgo = (t) => Math.round((Date.now() - t) / 1000);
 const ageNote = (fix) => (Date.now() - fix.receivedAt > WARN_FIX_AGE ? ` (${secondsAgo(fix.receivedAt)}초 전)` : '');
 
 // [headline, details, one-tap action?] for the sheet under the map.
-function sheetText(obs, current, opened, now) {
+function sheetText(obs, current, aimed, opened) {
   if (!obs) {
     if (state.mode === 'sim') return ['지도를 탭해서 내 위치를 정하세요', ''];
     if (state.gps.fix) return [`위치 신호가 끊겼어요 (${secondsAgo(state.gps.fix.receivedAt)}초 전)`, '하늘이 트인 곳에서 잠시 기다리거나 ◎를 눌러 다시 요청하세요'];
@@ -234,13 +242,15 @@ function sheetText(obs, current, opened, now) {
   const far = farFromLayout(obs);
   if (state.placing) return ['건물 배치를 옮기는 중이에요', '지도를 탭하거나 "내 위치를 중심으로" → 회전으로 맞추고 완료'];
   if (far) return far;
-  // Say whether the compass is in play — without it the judgment silently falls back to position.
-  const how = state.mode === 'gps' ? (obs.localHeading !== null ? '방향 반영' : '방향 없음 → 위치로 판정') : null;
-  const info = [`오차 ±${Math.round(obs.fix.accuracy)}m${ageNote(obs.fix)}`, how].filter(Boolean).join(' · ');
+  // Without a compass nothing speeds the opening up: say so, since it is invisible otherwise.
+  const compass = state.mode === 'gps' && obs.localHeading !== null;
+  const info = [`오차 ±${Math.round(obs.fix.accuracy)}m${ageNote(obs.fix)}`, state.mode === 'gps' && !compass && '나침반 없음'].filter(Boolean).join(' · ');
   if (current && opened.has(current)) return [`지금 여기: ${areaOf(current).name}`, info, { label: '설명 보기', run: () => showCard(current) }];
-  if (current) return ['? 새로운 곳이에요 — 잠시 그대로 있어 주세요', `${Math.max(1, Math.ceil(dwell.remaining(now) / 1000))}초 뒤 열려요 · ${info}`];
+  const wait = current && `${Math.max(1, Math.ceil(dwell.remaining() / 1000))}초 뒤 열려요`;
+  if (current && aimed) return ['? 새로운 곳이에요 — 방향도 맞아요', `${wait} · ${info}`];
+  if (current) return ['? 새로운 곳이에요 — 잠시 그대로 있어 주세요', [wait, compass && '건물 쪽을 보면 더 빨리', info].filter(Boolean).join(' · ')];
   if (opened.size === state.areas.length) return ['모든 곳을 열었어요 🎉', info];
-  return ['물음표(?) 구역으로 가서 건물 쪽을 바라보세요', info];
+  return ['물음표(?) 구역으로 가 보세요', info];
 }
 
 function sensorText(obs) {
@@ -268,20 +278,18 @@ function sensorParts(obs) {
 let previewAction = null; // what the button under the sheet text does right now
 
 // Judges where the visitor is (not while placing, not with a coarse or far-off fix: it costs up to
-// ~30 ms on a laptop, several times that on a phone), lets the leading area wait out its dwell,
-// draws, and opens an area whose time is up.
+// ~30 ms on a laptop, several times that on a phone), lets the area wait out its dwell (faster while
+// aimed at), draws, and opens an area whose time is up.
 function refresh() {
   const obs = observe();
   const usable = obs && !state.placing && obs.fix.accuracy <= POOR_ACCURACY && !farFromLayout(obs);
   const j = usable ? judgeBoth(obs, { preview: true }) : null;
-  const lead = j && leadingArea(j.result, state.guide.buildingPlace);
-  const current = lead && lead.p >= AREA_DEFAULTS.minProbability ? lead.key : null;
-  const now = Date.now();
-  const ready = dwell.update(current, now);
+  const { current, p, aimed } = j ? locate(j) : { current: null, p: 0, aimed: false };
+  const ready = dwell.update(current, Date.now(), aimed ? AREA_DEFAULTS.aimedSpeedup : 1);
   const opened = openedKeys();
   view.setPosition(obs && { point: obs.point, accuracy: obs.fix.accuracy, heading: obs.localHeading });
   view.render({ opened, current, animateKey: quietRender ? null : currentTest() }); // pulses only within one test
-  const [main, sub, action] = sheetText(obs, current, opened, now);
+  const [main, sub, action] = sheetText(obs, current, aimed, opened);
   $('#preview-main').textContent = main;
   $('#preview-sub').textContent = sub;
   previewAction = action?.run ?? null;
@@ -289,7 +297,7 @@ function refresh() {
   if (action) $('#preview-action').textContent = action.label;
   $('#sensor-status').textContent = sensorText(obs);
   $('#progress').textContent = `${opened.size} / ${state.areas.length}`;
-  if (ready && !opened.has(ready)) openArea(ready, obs, lead.p);
+  if (ready && !opened.has(ready)) openArea(ready, obs, p, aimed);
 }
 
 // Sensor events arrive many times a second; redraw at most ~5 times a second.
@@ -453,7 +461,7 @@ function hashText(text) {
 
 // Records the moment an area opens (raw position and heading, both judgments, every parameter —
 // enough to re-judge offline later), redraws, and shows its card.
-function openArea(key, obs, p) {
+function openArea(key, obs, p, aimed) {
   const j = judgeBoth(obs);
   const record = {
     id: makeId(),
@@ -469,10 +477,11 @@ function openArea(key, obs, p) {
     zoneParams: structuredClone(ZONE_DEFAULTS),
     areaParams: structuredClone(AREA_DEFAULTS),
     judgments: { position: summarize(j.position), heading: summarize(j.heading) },
-    used: j.used,
-    buildingId: j.result.best,
+    used: 'position', // which judgment picked the area
+    aimed, // the heading agreed at that moment, so the dwell ran faster
+    buildingId: j.position.best,
     placeId: key,
-    placeP: p, // the area's summed chance in the live judgment that opened it
+    placeP: p, // the area's summed position-only chance in the live judgment that opened it
     blind: false,
   };
   state.visits.push(record);
