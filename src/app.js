@@ -23,7 +23,7 @@ const state = {
   placement: null,
   mode: 'sim',
   sim: { point: null, accuracy: 10, heading: 0 },
-  gps: { fix: null, error: null, stop: null, centered: false, lastAt: 0, staleBefore: 0, droppedCached: false },
+  gps: { fix: null, error: null, stop: null, centered: false, lastAt: 0, staleBefore: 0, droppedCached: false, watchedAt: 0, lastFixAt: 0 },
   compass: { reading: null, stop: null, denied: false, startedAt: 0 },
   useHeading: false,
   showZones: true,
@@ -40,15 +40,16 @@ const view = createMapView($('#map'), {
   onBuildingClick: (id, point) => (state.mode === 'sim' || state.placing ? tapMap(point) : view.focus(id)),
   onLocate() {
     if (state.testMode && !state.placing) {
-      // placing is setup, not a judgment; still retry a dead GPS watch (e.g. after a denial)
-      if (state.mode === 'gps' && !state.gps.stop) startGps();
-      return toast(state.gps.error ?? BLIND_POSITION);
+      // placing is setup, not a judgment; still retry a dead or quiet GPS watch (e.g. after a denial)
+      const retried = state.mode === 'gps' && retryGps();
+      view.fit(); // back to the whole layout, never to the hidden own position
+      return toast(state.gps.error ?? (retried ? GPS_RETRIED : BLIND_POSITION));
     }
     const obs = observe();
     if (obs) return view.panTo(obs.point);
     if (state.mode === 'sim') return toast('먼저 지도를 탭해서 위치를 정하세요');
-    startGps(); // retries after a denied or failed watch
-    toast(state.gps.error ?? '아직 위치를 못 잡았어요');
+    const retried = retryGps();
+    toast(state.gps.error ?? (retried ? GPS_RETRIED : '아직 위치를 못 잡았어요'));
   },
 });
 
@@ -206,15 +207,17 @@ const doneBuilding = (v) => (v.blind ? (v.truth && v.truth !== 'none' ? v.truth 
 const visitedIds = () => new Set(currentVisits().filter((v) => v !== truthTarget).map(doneBuilding).filter(Boolean));
 const pct = (p) => `${Math.round(p * 100)}%`;
 const secondsAgo = (t) => Math.round((Date.now() - t) / 1000);
+// " (N초 전)" once a fix is old enough that the tester may have moved since (simulated fixes are always fresh).
+const ageNote = (fix) => (Date.now() - fix.receivedAt > WARN_FIX_AGE ? ` (${secondsAgo(fix.receivedAt)}초 전)` : '');
 
 function previewText(obs, j) {
   if (!obs) {
     if (state.mode === 'sim') return ['지도를 탭해서 내 위치를 정하세요', ''];
-    if (state.gps.fix) return [`위치 신호가 끊겼어요 (${secondsAgo(state.gps.fix.receivedAt)}초 전)`, '하늘이 트인 곳에서 잠시 기다려 주세요'];
+    if (state.gps.fix) return [`위치 신호가 끊겼어요 (${secondsAgo(state.gps.fix.receivedAt)}초 전)`, '하늘이 트인 곳에서 잠시 기다리거나 ◎를 눌러 다시 요청하세요'];
     if (state.gps.error) return [state.gps.error, ''];
     return ['위치를 찾는 중…', ''];
   }
-  const acc = `오차 ±${Math.round(obs.fix.accuracy)}m`;
+  const acc = `오차 ±${Math.round(obs.fix.accuracy)}m${ageNote(obs.fix)}`;
   // With "use heading" on, say whether it is actually in play — a missing compass silently means position only.
   const how = state.useHeading ? (obs.localHeading !== null ? '방향 반영' : '방향 없음 → 위치로 판정') : null;
   // Accuracy first: a ±km fix would otherwise read as "you are far from the layout".
@@ -239,7 +242,7 @@ function sensorParts(obs) {
   if (state.mode === 'sim') return state.useHeading ? [`방향 ${state.sim.heading}°`] : [];
   const parts = [];
   const fix = state.gps.fix;
-  if (fix) parts.push(`GPS ±${Math.round(fix.accuracy)}m${Date.now() - fix.receivedAt > WARN_FIX_AGE ? ` (${secondsAgo(fix.receivedAt)}초 전)` : ''}`);
+  if (fix) parts.push(`GPS ±${Math.round(fix.accuracy)}m${ageNote(fix)}`);
   if (state.gps.error && fix) parts.push(state.gps.error);
   if (obs?.heading) parts.push(`방향 ${Math.round(obs.heading.value)}°`);
   else if (state.compass.denied) parts.push('방향 권한 거부됨');
@@ -291,6 +294,7 @@ const GPS_ERRORS = { 1: '위치 권한이 거부됐어요 — 안내대로 허�
 const POOR_ACCURACY = 50; // meters; beyond this no building can be told apart
 const FAR_FROM_LAYOUT = 500; // meters from the layout centre; beyond this nothing is recorded
 const CACHED_FIX_AGE = 120_000; // ms by the fix's own clock; generous for clock skew
+const GPS_RETRIED = '위치를 다시 요청했어요 — 잠시 기다려 주세요';
 const BLIND_POSITION = '테스트 모드에서는 내 위치를 숨겨요 — 지도 바탕(길·나무·시설)을 보고 서 주세요';
 const PLACE_MAX_ACCURACY = 30; // meters; centering the layout on a worse fix misplaces it
 const LOCATION_HELP = 'iPhone: 설정 → 개인정보 보호 및 보안 → 위치 서비스 → Safari 웹 사이트 → "앱을 사용하는 동안", "정확한 위치" 켬\nAndroid Chrome: 주소창 왼쪽 아이콘 → 권한 → 위치 허용, 그리고 설정 → 애플리케이션 → Chrome → 권한 → 위치 → "정확한 위치 사용" 켬\n그다음 페이지를 새로고침하세요.';
@@ -301,6 +305,7 @@ function startGps() {
     state.gps.error = 'HTTPS 주소에서만 위치를 쓸 수 있어요';
     return;
   }
+  state.gps.watchedAt = Date.now();
   state.gps.stop = watchPosition(
     (fix) => {
       // After the page was hidden, a fix stamped no later than the last one seen before
@@ -310,9 +315,11 @@ function startGps() {
       // once only, so a phone with a wrong clock still gets positions after that.
       if (!state.gps.lastAt && !state.gps.droppedCached && Date.now() - fix.at > CACHED_FIX_AGE) {
         state.gps.droppedCached = true;
+        state.gps.staleBefore = Math.max(state.gps.staleBefore, fix.at); // a restarted watch may hand it over again
         return;
       }
       state.gps.lastAt = fix.at;
+      state.gps.lastFixAt = fix.receivedAt;
       state.gps.fix = fix;
       state.gps.error = null;
       if (!state.gps.centered) {
@@ -338,7 +345,27 @@ function startGps() {
 
 function stopGps() {
   state.gps.stop?.();
-  Object.assign(state.gps, { stop: null, fix: null, error: null, centered: false, lastAt: 0, staleBefore: 0, droppedCached: false });
+  Object.assign(state.gps, { stop: null, fix: null, error: null, centered: false, lastAt: 0, staleBefore: 0, droppedCached: false, watchedAt: 0, lastFixAt: 0 });
+}
+
+// A watch can go quiet without any error (e.g. after the page sat in the background). Restart one
+// that has delivered nothing for MAX_FIX_AGE. A new watch first hands over the last known position
+// with its old timestamp (as on resume), so everything up to the last fix seen counts as stale.
+function restartQuietGps() {
+  if (!state.gps.stop || Date.now() - Math.max(state.gps.lastFixAt, state.gps.watchedAt) <= MAX_FIX_AGE) return false;
+  state.gps.stop();
+  state.gps.stop = null;
+  state.gps.staleBefore = Math.max(state.gps.staleBefore, state.gps.lastAt);
+  state.gps.error = null; // a new attempt: an old "응답이 늦어요" no longer describes it
+  startGps();
+  return true;
+}
+
+// ◎: restart a quiet watch, or start a dead one (after a denial or a failed start). True if it restarted.
+function retryGps() {
+  const restarted = restartQuietGps();
+  startGps();
+  return restarted;
 }
 
 // Must be called synchronously inside a tap handler (iOS permission prompt).
@@ -532,16 +559,25 @@ const choiceButton = (label, className, onClick) => {
 
 // The photo itself is the tester's memory aid when tagging later from the log.
 let truthPhotoUrl = null;
+// The box shows (empty) right away, so a photo loading late never pushes the choices down under a finger.
+const BLANK_PHOTO = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'; // 1×1 transparent, no broken-image icon
 async function showTruthPhoto(visit) {
   const img = $('#truth-photo');
-  img.hidden = true;
+  img.alt = '';
+  img.src = BLANK_PHOTO;
+  img.hidden = !visit.photoBytes;
   if (!visit.photoBytes) return;
   const blob = unsavedPhotos.get(visit.id) ?? (await loadPhoto(visit.id).catch(() => null));
-  if (!blob || truthTarget !== visit) return; // dialog moved on meanwhile
+  if (truthTarget !== visit) return; // dialog moved on meanwhile
+  if (!blob) {
+    img.removeAttribute('src'); // the alt text shows in the box instead
+    img.alt = '사진을 불러오지 못했어요';
+    return;
+  }
   if (truthPhotoUrl) URL.revokeObjectURL(truthPhotoUrl);
   truthPhotoUrl = URL.createObjectURL(blob);
+  img.alt = '이 촬영의 사진';
   img.src = truthPhotoUrl;
-  img.hidden = false;
 }
 
 // Nearby candidates (from either judgment) first, in data order, then every other building.
@@ -561,7 +597,19 @@ function askTruth(visit) {
     ...[...candidates, ...rest].map((id) => choiceButton(nameOf(id), candidates.includes(id) ? 'candidate' : '', () => setTruth(visit, id))),
     choiceButton('건물 아님', 'none', () => setTruth(visit, 'none')),
   );
+  guardTruthButtons();
   $('#truth').showModal();
+}
+
+// The dialog opens right where the shutter (or 📷) was: a second tap meant for that — a double tap,
+// or a "did it take?" tap — must not record an answer. Every button waits a moment, visibly disabled.
+const TRUTH_TAP_GUARD = 600; // ms
+let truthGuardTimer;
+function guardTruthButtons() {
+  const buttons = [...$('#truth').querySelectorAll('button')];
+  for (const b of buttons) b.disabled = true;
+  clearTimeout(truthGuardTimer);
+  truthGuardTimer = setTimeout(() => buttons.forEach((b) => (b.disabled = false)), TRUTH_TAP_GUARD);
 }
 
 // Where the camera pointed (the recorded compass, an input — not the judgment). In a park the
@@ -670,15 +718,23 @@ function poorAccuracy(obs) {
 
 const noFixMessage = () => (state.mode === 'sim' ? '먼저 지도를 탭해서 위치를 정하세요' : state.gps.error ?? '아직 위치를 못 잡았어요');
 
-function shootSimulated() {
+// Held while a camera-less shot is recorded (its stand-in photo encodes asynchronously): a quick
+// second tap on 📷 would otherwise record a second shot and take over the first one's truth dialog.
+let simulating = false;
+async function shootSimulated() {
   const obs = observe();
   if (!obs) return toast(noFixMessage());
   if (refuseFar(obs)) return;
-  record(obs, judgeBoth(obs), simulatedPhoto(obs), 'simulated');
+  simulating = true;
+  try {
+    await record(obs, judgeBoth(obs), simulatedPhoto(obs), 'simulated');
+  } finally {
+    simulating = false;
+  }
 }
 
 async function openShutter() {
-  if (!$('#camera').hidden) return; // already open or opening
+  if (!$('#camera').hidden || simulating) return; // already open, opening, or recording a camera-less shot
   stopPlacing(); // a stray tap while shooting must not move the layout
   if (state.mode === 'gps') startCompass(); // retry the iOS prompt inside this tap if needed
   if (refuseFar(observe())) return; // don't even open the camera
@@ -860,6 +916,7 @@ function bindControls() {
       state.gps.staleBefore = state.gps.lastAt;
       state.gps.fix = null;
     }
+    if (!document.hidden && state.mode === 'gps') restartQuietGps(); // a denied (dead) watch waits for ◎
     if (!document.hidden && unsavedCount()) flush(); // iOS may have dropped the storage connection
     if (!document.hidden && !visitsLoaded) loadStoredVisits();
   });
@@ -986,4 +1043,5 @@ async function start() {
 start().catch((e) => {
   console.error(e);
   $('#start-note').textContent = '앱을 시작하지 못했어요. 새로고침해 주세요. (방금 업데이트됐다면 1~2분 뒤 다시)';
+  $('#start-note').dataset.error = 'true'; // the slow-start watchdog keeps this specific message
 });

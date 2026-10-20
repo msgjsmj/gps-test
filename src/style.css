@@ -192,7 +192,8 @@ body.placing #map { cursor: crosshair; outline: 4px solid var(--accent); outline
 .place-bar .row { display: flex; gap: 8px; }
 .place-bar .row button { flex: 1; }
 #notice-text { margin: 0; line-height: 1.5; white-space: pre-line; }
-.truth-photo { width: 100%; max-height: 28dvh; object-fit: contain; border-radius: 10px; background: #000; }
+/* fixed box: shown before the photo loads, so the choices below never move */
+.truth-photo { display: block; width: 100%; height: 28dvh; object-fit: contain; border-radius: 10px; background: #000; color: #fff; text-align: center; }
 .truth-photo[hidden] { display: none; }
 
 .camera { background: #000; }
