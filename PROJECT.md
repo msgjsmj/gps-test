@@ -103,6 +103,12 @@
   - 검증: 단위 테스트 36/36. headless에서 iOS 경로를 강제해 세로 190° / 가로(반시계) 원값 100° / 가로(시계) 원값 280° → 모두 진북 181°·"중화문" 판정, 기록에 보정값과 원값.
   - **실기기 확인(2026-10-20, 사용자)**: 회전 잠금 켜고/끄고 가로로 들어도 지도 부채꼴이 카메라 방향과 맞음 → Safari는 화면이 회전돼도 나침반을 보정하지 않는다(WebKit 소스와 일치, "iOS 26 자동 보정" 포럼 언급은 Safari에 해당 없음). 화면 회전 여부로 보정을 거를 필요 없음.
 
+- [x] 장소 설명 가져오기 (2026-10-20, 사용자 요청: "머라고 덕수궁 맵"의 설명을 모두 받아 이 서비스에서 이어서 진행)
+  - 출처: https://puhahasu.github.io/meorago-deoksugung-map/ (저장소 `puhahasu/meorago-deoksugung-map`의 `content.js` `PLACES`). 게시본과 저장소 `main`이 바이트 단위로 같음을 확인.
+  - `npm run import:guide` → `data/deoksugung-guide.json`: 10곳(덕수궁 소개·중화전 일원·즉조당 일원·중명전 일원·석조전 일원·중화전 행각·함녕전·덕홍전·광명문·정관헌·돈덕전)을 **글자 그대로** — 요약·본문 39문단·각주 2·출처 6·검토 메모·문안 상태(`draft`)·복구 이력까지. 우리 것은 `buildingPlace`(건물 → 설명) 하나뿐이고 매핑은 `tools/import-guide.mjs`에 있다. `source.commit`에 가져온 커밋(`3db9033`)을 남긴다.
+  - 매핑: 13개 건물 모두 설명이 있음. 즉조당·석어당·준명당 → 즉조당 일원, 함녕전·덕홍전 → 함녕전·덕홍전(본문에 이름이 나옴). **추정 2건**: 대한문 → 덕수궁 소개(사이트의 옛 "입구 설명"), 중화문 → 중화전 일원. 중명전은 궁 담장 밖이라 우리 배치에 건물이 없다.
+  - 검증: 가져온 `places`가 게시본 `content.js`와 deep-equal, `test/guide.test.mjs`(모든 건물이 본문 있는 설명으로 연결 — 매핑을 지우면 실패함을 확인), 테스트 37/37. **앱 화면에는 아직 쓰지 않음.**
+
 ## 설계
 
 ### 핵심 원칙
@@ -145,7 +151,9 @@ src/                  ES modules (빌드 없음)
   map-view.js         Leaflet 렌더링(지도 교체 지점)
   app.js              컨트롤러: 상태·관측·판정·기록·화면
 data/deoksugung.json  area 데이터 (OSM에서 생성)
+data/deoksugung-guide.json  장소 설명 (머라고 덕수궁 맵에서 가져옴) + 건물 → 설명 매핑
 tools/build-area.mjs  OSM Overpass → area JSON
+tools/import-guide.mjs  머라고 사이트 content.js → 설명 JSON (글자 그대로)
 test/                 node --test
 ```
 
@@ -156,6 +164,7 @@ node --test                   # 순수 로직 테스트
 ```
 폰 테스트는 HTTPS 필요(Geolocation·카메라·방향 API 제약) → GitHub Pages(`main` push 시 자동 배포).
 OSM 데이터 갱신: `npm run build:area` (Overpass, 실패 시 미러로 재시도).
+장소 설명 갱신: `npm run import:guide` (기본 `main`, 특정 커밋은 `node tools/import-guide.mjs <ref>`). 건물을 추가하면 `BUILDING_PLACE`도 채워야 테스트가 통과한다.
 
 ## Big picture ahead (generative sequence)
 1. **판정이 PC에서 끝까지 도는 것**이 중심. 시뮬레이션(지도 탭 = 내 위치)으로 판정 품질을 눈으로 보며 튜닝.
@@ -185,6 +194,8 @@ OSM 데이터 갱신: `npm run build:area` (Overpass, 실패 시 미러로 재�
 ## Needs confirmation
 - **실기기 확인 필요**(headless로는 불가): iOS/Android에서 카메라 미리보기·촬영, iOS 방향 권한 팝업, 방향 부채꼴이 실제 카메라 방향과 맞는지(자편각 보정 포함).
 - 건물 facing 값 중 일부(정관헌, 돈덕전)는 추정 — 실제 궁에서 확인.
+- **장소 설명의 원본이 어디인가**: 지금은 머라고 사이트가 원본이고 여기는 `import:guide`로 만든 사본(가져온 뒤 거기서 고치면 다시 가져와야 함). 앞으로 이 저장소에서 직접 고칠 거면 가져오기를 멈추고 `data/deoksugung-guide.json`을 원본으로 삼는다 — 둘을 동시에 고치지 않는다.
+- 매핑 추정 2건(대한문 → 덕수궁 소개, 중화문 → 중화전 일원)과, 10곳 중 8곳이 사이트 README 기준 **검토 초안**(`draft: true`)이라는 점 — 앱에 보여 줄 때 그대로 둘지.
 
 ## Known vs. unknown
 - **확인됨**: 건물 간격(OSM 실측), iOS Safari EXIF GPS 제거(WebKit 버그, 2023년 기준 보고), 덕수궁 자편각 -9.02°(WMM2025), 판정·존·통계 로직(테스트 33개), headless에서 전체 흐름.

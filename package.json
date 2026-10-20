@@ -5,6 +5,7 @@
   "scripts": {
     "test": "node --test",
     "serve": "python3 tools/serve.py",
-    "build:area": "node tools/build-area.mjs"
+    "build:area": "node tools/build-area.mjs",
+    "import:guide": "node tools/import-guide.mjs"
   }
 }
