@@ -162,6 +162,7 @@
           <li>배치를 옮겼다면 되돌려요. 덕수궁 근처에서는 아래에 "덕수궁 실제 위치로 되돌리기" 버튼이 떠요. (⚙︎ 설정에도 있어요)</li>
           <li>나머지는 동네 테스트의 3~5번과 같아요.</li>
         </ol>
+        <p class="sub">실제 덕수궁에서는 건물이 <strong>닫힌 채(회색)</strong> 시작하고 촬영 존도 숨겨져요. 찍으면 그 건물이 열려요 — 테스트 모드에서는 정답을 기록한 순간, 테스트 모드를 끄면 촬영하자마자 판정된 건물이 열려요.</p>
         <p class="sub">진행률은 0 / 12부터 다시 세요. 이전 기록은 지워지지 않고 내보내기에 모두 들어가요.</p>
       </details>
 
@@ -169,7 +170,8 @@
       <ul class="legend">
         <li><span class="swatch" data-swatch="building"></span>건물</li>
         <li><span class="swatch" data-swatch="zone"></span>촬영 존 — 이 안에서 건물 쪽을 찍으면 그 건물로 판정</li>
-        <li><span class="swatch" data-swatch="visited"></span>체크된 건물</li>
+        <li><span class="swatch" data-swatch="visited"></span>체크된(열린) 건물</li>
+        <li><span class="swatch" data-swatch="locked"></span>닫힌 건물 — 실제 덕수궁 현장 모드에서 아직 안 찍은 건물</li>
         <li><span class="swatch" data-swatch="building+candidate"></span>지금 찍으면 체크될 건물</li>
         <li><span class="swatch round" data-swatch="dot"></span>내 위치 (옅은 원 = GPS 오차, 부채꼴 = 폰이 향한 방향)</li>
         <li><span class="swatch" data-swatch="boundary"></span>궁 경계</li>

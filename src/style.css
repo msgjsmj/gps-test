@@ -293,6 +293,12 @@ dialog h3 { margin: 4px 0 0; font-size: 15px; }
   color: var(--ink);
 }
 .bldg-label::before { display: none; }
+.bldg-label.locked { color: #8a94a6; background: rgba(255, 255, 255, .55); } /* Leaflet sets inline opacity, so dim by colour */
+.leaflet-interactive.unlock-pulse { animation: unlock-pulse 1.2s ease-out; }
+@keyframes unlock-pulse {
+  0% { stroke-width: 14px; fill-opacity: .9; }
+  100% { stroke-width: 2px; fill-opacity: .55; }
+}
 
 .link-btn {
   justify-self: center;

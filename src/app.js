@@ -33,6 +33,7 @@ const state = {
 };
 
 let truthTarget = null; // the visit the open truth dialog is about
+let quietRender = false; // a refresh whose map changes should not animate
 
 const view = createMapView($('#map'), {
   onMapClick: tapMap,
@@ -204,7 +205,13 @@ const currentVisits = () => state.visits.filter(inCurrentTest);
 // What a shot "completes": the judged building, except in blind tests, where it is the building
 // the tester says they actually shot — so a misjudged neighbour never looks done.
 const doneBuilding = (v) => (v.blind ? (v.truth && v.truth !== 'none' ? v.truth : null) : v.buildingId);
-const visitedIds = () => new Set(currentVisits().filter((v) => v !== truthTarget).map(doneBuilding).filter(Boolean));
+const visitedIds = () => new Set(currentVisits().filter((v) => v !== truthTarget || v.truth).map(doneBuilding).filter(Boolean));
+
+// At the real palace in field mode the map starts closed and each building opens when it is
+// done — in a blind test when its truth is tagged, otherwise when it is judged at the shot
+// (both follow doneBuilding). Closed buildings also hide their photo zones, so testers shoot
+// from where they naturally stand rather than from inside a drawn zone.
+const lockedMap = () => state.mode === 'gps' && isReal(state.placement);
 const pct = (p) => `${Math.round(p * 100)}%`;
 const secondsAgo = (t) => Math.round((Date.now() - t) / 1000);
 // " (N초 전)" once a fix is old enough that the tester may have moved since (simulated fixes are always fresh).
@@ -263,7 +270,13 @@ function refresh() {
   // Blind test mode hides the own-position dot too: standing where the dot sits inside a zone
   // would make position-only accuracy circular (the judgment uses that same dot).
   view.setPosition((!state.testMode || state.placing) && obs && { point: obs.point, accuracy: obs.fix.accuracy, heading: obs.localHeading });
-  view.render({ visited: visitedIds(), candidateId: state.testMode ? null : j?.result.best, showZones: state.showZones });
+  view.render({
+    visited: visitedIds(),
+    candidateId: state.testMode ? null : j?.result.best,
+    showZones: state.showZones,
+    locked: lockedMap(),
+    animateKey: quietRender ? null : currentTest(), // pulses only within one test, never on a bulk load
+  });
   const [main, sub, action] = previewText(obs, j);
   $('#preview-main').textContent = main;
   $('#preview-sub').textContent = sub;
@@ -485,12 +498,14 @@ async function record(obs, j, photoPromise, photoKind) {
   };
   const photo = await photoPromise.catch(() => null);
   visit.photoBytes = photo?.size ?? 0;
+  const openBefore = visitedIds();
   state.visits.push(visit);
   persist(visit);
   persistPhoto(visit.id, photo);
   if (state.testMode) return askTruth(visit); // the result shows after the truth is tagged
   refresh();
-  if (visit.buildingId) toast(`✓ ${nameOf(visit.buildingId)} 방문 체크!`, true);
+  if (visit.buildingId && lockedMap() && !openBefore.has(visit.buildingId) && visitedIds().has(visit.buildingId)) toast(`🔓 ${nameOf(visit.buildingId)} 열렸어요!`, true);
+  else if (visit.buildingId) toast(`✓ ${nameOf(visit.buildingId)} 방문 체크!`, true);
   else toast('근처에 촬영 대상 건물이 없어서 체크하지 않았어요');
 }
 
@@ -621,6 +636,7 @@ const truthName = (truth) => (truth === 'none' ? '건물 아님' : nameOf(truth)
 
 function setTruth(visit, truth) {
   truthTarget = null;
+  const openBefore = visitedIds(); // before this answer (an earlier answer of this shot counts)
   visit.truth = truth;
   visit.truthAt = new Date().toISOString();
   refresh(); // progress and colours count the truth right away
@@ -628,7 +644,9 @@ function setTruth(visit, truth) {
   persist(visit);
   const right = (visit.buildingId ?? 'none') === truth;
   const judged = visit.buildingId ? nameOf(visit.buildingId) : '건물 없음';
-  toast(right ? `정답 ${truthName(truth)} — 판정 맞음` : `정답 ${truthName(truth)} — 판정은 ${judged}(틀림)`, right);
+  const openedNow = lockedMap() && truth !== 'none' && !openBefore.has(truth) && visitedIds().has(truth); // not for shots of another test
+  const opened = openedNow ? ` · 🔓 ${truthName(truth)} 열림` : '';
+  toast((right ? `정답 ${truthName(truth)} — 판정 맞음` : `정답 ${truthName(truth)} — 판정은 ${judged}(틀림)`) + opened, right);
   if ($('#records').open) renderRecords();
 }
 
@@ -649,7 +667,9 @@ function loadStoredVisits() {
       const fresh = new Set(state.visits.map((v) => v.id));
       state.visits = [...loaded.filter((v) => !fresh.has(v.id)), ...state.visits];
       visitsLoaded = true;
+      quietRender = true; // stored visits opening at once is not an achievement
       refresh();
+      quietRender = false;
     })
     .catch(() => toast('저장된 기록을 불러오지 못했어요 — 다시 시도할게요. 이 브라우저에서는 저장이 안 될 수 있어요'));
 }
