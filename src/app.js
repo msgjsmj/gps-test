@@ -322,10 +322,15 @@ function stopCompass() {
 const HEADING_HELP = '방향 없이도 위치만으로 판정돼요.\n방향을 쓰려면 페이지를 새로고침하고 "현장에서 시작"에서 허용하세요. 다시 묻지 않으면 Safari를 완전히 닫았다가 다시 열어 주세요.';
 const CAMERA_HELP = '카메라 없이 찍은 기록은 남기지 않아요.\nSafari: 주소창의 "가가(aA)" → 웹 사이트 설정 → 카메라 → 허용\nChrome: 주소창 왼쪽 아이콘 → 권한 → 카메라 허용\n그다음 페이지를 새로고침하세요.';
 
+// A second notice while one is open is appended, so neither set of instructions is lost.
 function notice(title, text) {
+  if ($('#notice').open) {
+    $('#notice-text').textContent += `\n\n[${title}]\n${text}`;
+    return;
+  }
   $('#notice-title').textContent = title;
   $('#notice-text').textContent = text;
-  if (!$('#notice').open) $('#notice').showModal();
+  $('#notice').showModal();
 }
 
 function setMode(mode) {

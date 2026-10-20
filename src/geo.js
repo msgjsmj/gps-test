@@ -101,7 +101,8 @@ export function headingGap(p, poly, heading) {
     hi = Math.max(hi, rel);
   }
   const h = angleDiff(heading, center);
-  if (h < lo) return lo - h;
-  if (h > hi) return h - hi;
+  // Outside the arc, the gap is the shorter way round the circle to either end.
+  if (h < lo) return Math.min(lo - h, 360 - (hi - h));
+  if (h > hi) return Math.min(h - hi, 360 - (h - lo));
   return 0;
 }

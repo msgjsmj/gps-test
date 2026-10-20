@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { centroid } from '../src/geo.js';
+import { centroid, headingGap } from '../src/geo.js';
 import { JUDGE_DEFAULTS, judge } from '../src/judge.js';
 import { withZones } from '../src/zones.js';
 
@@ -23,6 +23,13 @@ for (const accuracy of [5, 10, 20]) {
     }
   });
 }
+
+test('heading gap takes the shorter way round next to a wall', () => {
+  // 0.12 m outside 석어당: the arc is lopsided around the centroid bearing (found in review).
+  const b = buildings.find((x) => x.id === 'seogeodang');
+  const gap = headingGap([0.8, -2.6], b.footprint, 251);
+  assert.ok(gap < 40, `gap ${gap}`);
+});
 
 test('default sampling agrees with dense sampling on real data', () => {
   const dense = { ...JUDGE_DEFAULTS, sampleStep: 0.5 };
