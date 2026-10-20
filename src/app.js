@@ -743,6 +743,13 @@ function bindControls() {
   $('#preview-action').addEventListener('click', () => previewAction?.());
   $('#card-more').addEventListener('toggle', () => ($('#card-more-label').textContent = $('#card-more').open ? '접기' : '더 자세히 읽기'));
   for (const dialog of document.querySelectorAll('dialog')) dialog.addEventListener('close', showPendingCard);
+  // A tap on the dimmed area around the card closes it. Taps on the backdrop arrive at the dialog itself;
+  // the bounds check keeps a tap on the dialog's own edge (padding, scrollbar) from counting.
+  $('#card').addEventListener('click', (e) => {
+    if (e.target !== e.currentTarget) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) e.currentTarget.close();
+  });
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && state.gps.fix) {
       // The visitor may walk while the screen is off; never judge with the pre-lock position.

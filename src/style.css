@@ -272,6 +272,16 @@ dialog h3 { margin: 4px 0 0; font-size: 15px; }
 .card-summary { margin: 0; padding: 12px 14px; border-radius: 10px; background: #fefcbf; font-size: 16px; line-height: 1.6; }
 .card-more > summary { cursor: pointer; padding: 10px 0; font-weight: 700; color: var(--brand); }
 .card-body p { margin: 0 0 10px; line-height: 1.7; }
+/* Stays at the bottom of the card while the full text scrolls (the dialog is the scroll container). */
+.card-actions {
+  position: sticky;
+  bottom: 0;
+  display: grid;
+  margin: 0 -16px -16px;
+  padding: 10px 16px 16px;
+  background: #fff;
+  box-shadow: 0 -8px 12px -8px rgba(0, 0, 0, .18);
+}
 .footnote { margin-top: 6px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; font-size: 14px; }
 .footnote summary { cursor: pointer; font-weight: 700; }
 .footnote p { margin: 8px 0 0; line-height: 1.6; }
