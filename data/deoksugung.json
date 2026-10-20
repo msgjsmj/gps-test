@@ -409,9 +409,9 @@
    "id": "junghwajeon-haenggak",
    "name": "중화전 행각",
    "label": "행각",
-   "facing": [180, 0],
-   "facingAssumed": true,
-   "identityAssumed": true,
+   "facing": [
+    180
+   ],
    "osm": "way/381755271",
    "footprint": [
     [-4.4, -98],
