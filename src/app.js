@@ -740,11 +740,13 @@ function bindControls() {
     if (truthPhotoUrl) URL.revokeObjectURL(truthPhotoUrl);
     truthPhotoUrl = null;
     $('#truth-photo').hidden = true;
-    // Skipped (button or Esc): still tell the tester what was judged.
+    // Skipped (button or Esc). A blind shot keeps its judgment hidden, or a label added
+    // later from the log would be anchored on it; an open shot showed it while aiming anyway.
     if (!truthTarget) return;
     const v = truthTarget;
     truthTarget = null;
     refresh();
+    if (v.blind && !v.truth) return toast('정답 미기록 — 방문 기록 화면의 로그에서 나중에 기록할 수 있어요');
     toast(`정답 미기록 — 판정은 ${v.buildingId ? nameOf(v.buildingId) : '건물 없음'}`);
   });
   $('#records').addEventListener('close', () => {
