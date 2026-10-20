@@ -269,7 +269,9 @@ dialog h3 { margin: 4px 0 0; font-size: 15px; }
 .credit a { color: inherit; }
 .card-fresh { justify-self: start; margin: 0; padding: 2px 8px; border-radius: 999px; background: #c6f6d5; color: var(--ok); font-size: 13px; font-weight: 700; }
 .card-fresh[hidden] { display: none; }
-#card-name:focus { outline: none; } /* takes the dialog's initial focus only so the credit link does not */
+/* The card takes the initial focus itself (see showCard): nothing visible inside gets a focus ring when a
+   card opens on its own, which Safari would otherwise draw as if a keyboard were in use. */
+.card:focus { outline: none; }
 .card-summary { margin: 0; padding: 12px 14px; border-radius: 10px; background: #fefcbf; font-size: 16px; line-height: 1.6; }
 .card-more > summary { cursor: pointer; padding: 10px 0; font-weight: 700; color: var(--brand); }
 .card-body p { margin: 0 0 10px; line-height: 1.7; }

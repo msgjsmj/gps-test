@@ -102,14 +102,14 @@
     </form>
   </dialog>
 
-  <dialog id="card" class="card">
+  <dialog id="card" class="card" tabindex="-1">
     <form method="dialog">
       <figure id="card-figure" class="card-figure" hidden>
         <img id="card-photo" alt="">
         <figcaption id="card-credit" class="credit"></figcaption>
       </figure>
       <p id="card-fresh" class="card-fresh" hidden>🔓 새로 열렸어요</p>
-      <h2 id="card-name" tabindex="-1" autofocus></h2> <!-- initial focus: else the photo credit link gets it and looks highlighted -->
+      <h2 id="card-name"></h2>
       <p id="card-summary" class="card-summary"></p>
       <details id="card-more" class="card-more">
         <summary><span id="card-more-label">더 자세히 읽기</span></summary>

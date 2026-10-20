@@ -656,7 +656,10 @@ function showCard(key, { fresh = false } = {}) {
   );
   $('#card-more').open = false;
   $('#card-more-label').textContent = '더 자세히 읽기';
-  if (!$('#card').open) $('#card').showModal();
+  if (!$('#card').open) {
+    $('#card').showModal();
+    $('#card').focus({ preventScroll: true }); // off the first link (the photo credit), onto the card itself
+  }
   $('#card').scrollTop = 0;
 }
 
