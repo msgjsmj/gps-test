@@ -39,7 +39,7 @@ const view = createMapView($('#map'), {
   // In simulation (or while placing) a tap on a building is still a map tap; otherwise it focuses the building.
   onBuildingClick: (id, point) => (state.mode === 'sim' || state.placing ? tapMap(point) : view.focus(id)),
   onLocate() {
-    if (state.testMode) return toast(BLIND_POSITION);
+    if (state.testMode && !state.placing) return toast(BLIND_POSITION); // placing is setup, not a judgment
     const obs = observe();
     if (obs) return view.panTo(obs.point);
     if (state.mode === 'sim') return toast('먼저 지도를 탭해서 위치를 정하세요');
@@ -86,6 +86,7 @@ function startPlacing() {
   $('#place-bar').hidden = false;
   view.map.doubleClickZoom.disable(); // every tap places; a double tap must not also zoom
   fitUnderBar();
+  refresh(); // shows the own-position dot even in blind test mode while placing
 }
 
 function stopPlacing() {
@@ -95,6 +96,7 @@ function stopPlacing() {
   $('#place-bar').hidden = true;
   view.map.doubleClickZoom.enable();
   saveSetting(placementKey(), state.placement);
+  refresh();
 }
 
 // A tapped spot is already in view; only a jump to the GPS position refits the map.
@@ -171,7 +173,10 @@ const currentTest = () => testContext({ mode: state.mode, placement: state.place
 const inCurrentTest = (v) => testContext(v, state.area.anchor) === currentTest();
 const currentVisits = () => state.visits.filter(inCurrentTest);
 // A shot whose truth dialog is still open stays out, so blind test mode leaks nothing behind the dialog.
-const visitedIds = () => new Set(currentVisits().filter((v) => v !== truthTarget).map((v) => v.buildingId).filter(Boolean));
+// What a shot "completes": the judged building, except in blind tests, where it is the building
+// the tester says they actually shot — so a misjudged neighbour never looks done.
+const doneBuilding = (v) => (v.blind ? (v.truth && v.truth !== 'none' ? v.truth : null) : v.buildingId);
+const visitedIds = () => new Set(currentVisits().filter((v) => v !== truthTarget).map(doneBuilding).filter(Boolean));
 const pct = (p) => `${Math.round(p * 100)}%`;
 const secondsAgo = (t) => Math.round((Date.now() - t) / 1000);
 
@@ -224,7 +229,7 @@ function refresh() {
   const j = obs && judgeBoth(obs, { preview: true });
   // Blind test mode hides the own-position dot too: standing where the dot sits inside a zone
   // would make position-only accuracy circular (the judgment uses that same dot).
-  view.setPosition(!state.testMode && obs && { point: obs.point, accuracy: obs.fix.accuracy, heading: obs.localHeading });
+  view.setPosition((!state.testMode || state.placing) && obs && { point: obs.point, accuracy: obs.fix.accuracy, heading: obs.localHeading });
   view.render({ visited: visitedIds(), candidateId: state.testMode ? null : j?.result.best, showZones: state.showZones });
   const [main, sub] = previewText(obs, j);
   $('#preview-main').textContent = main;
@@ -658,7 +663,7 @@ function renderRecords() {
   renderShotLog();
   $('#record-list').replaceChildren(
     ...state.buildings.map((b) => {
-      const mine = currentVisits().filter((v) => v.buildingId === b.id);
+      const mine = currentVisits().filter((v) => doneBuilding(v) === b.id);
       const li = document.createElement('li');
       li.className = mine.length ? 'done' : '';
       const mark = Object.assign(document.createElement('span'), { className: 'mark', textContent: mine.length ? '✓' : '○' });
