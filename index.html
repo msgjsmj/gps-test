@@ -29,7 +29,6 @@
       <p id="preview-sub" class="sub"></p>
     </div>
     <button id="preview-action" class="secondary" type="button" hidden></button>
-    <button id="shoot" class="shoot" type="button">📷 촬영</button>
     <p class="app-version"></p>
   </section>
 
@@ -55,24 +54,15 @@
 
   <section id="start" class="overlay start">
     <h2 id="start-title">방문 체크</h2>
-    <p id="start-note">건물 사진을 찍으면, 찍은 위치로 어느 건물을 방문했는지 자동으로 체크해요.</p>
+    <p id="start-note">덕수궁을 걸으며 물음표(?) 구역에 들어가면, 그곳의 사진과 설명이 자동으로 열려요.</p>
     <button id="start-gps" class="primary big" type="button" disabled>현장에서 시작</button>
-    <p class="sub">실제 GPS로 찍어요. 덕수궁이 아니어도 돼요 — 동네 공원에 건물 배치를 옮겨 테스트할 수 있어요. 위치·방향 권한은 지금, 카메라는 첫 촬영 때 물어봐요.</p>
+    <p class="sub">실제 GPS·나침반으로 걸어요. 덕수궁이 아니어도 돼요 — 동네 공원에 건물 배치를 옮겨 체험할 수 있어요. 위치·방향 권한을 지금 물어봐요.</p>
     <button id="start-sim" class="secondary big" type="button" disabled>시뮬레이션으로 둘러보기</button>
-    <p class="sub">지도를 탭한 곳을 내 위치로 써요. 집이나 PC에서 판정을 미리 보기 좋아요.</p>
+    <p class="sub">지도를 탭한 곳을 내 위치로 써요. 탭하고 잠시 기다리면 열려요.</p>
     <button id="start-help" class="link-btn" type="button">처음이라면 — 사용법 보기</button>
     <p class="app-version"></p>
   </section>
 
-  <section id="camera" class="overlay camera" hidden>
-    <video id="camera-video" playsinline muted autoplay></video>
-    <p id="camera-preview" class="camera-preview"></p>
-    <div class="camera-bar">
-      <button id="camera-close" class="camera-close" type="button" aria-label="카메라 닫기">✕</button>
-      <button id="camera-shutter" class="camera-shutter" type="button" aria-label="촬영"></button>
-      <span class="camera-spacer"></span>
-    </div>
-  </section>
 
   <dialog id="settings">
     <form method="dialog">
@@ -86,6 +76,8 @@
         <legend>시뮬레이션</legend>
         <label>GPS 오차 <output id="accuracy-out">10</output> m
           <input id="accuracy" type="range" min="3" max="40" step="1" value="10"></label>
+        <label>바라보는 방향 <output id="heading-out">0</output>° (0 = 북)
+          <input id="heading" type="range" min="0" max="359" step="1" value="0"></label>
       </fieldset>
       <fieldset>
         <legend>건물 배치</legend>
@@ -94,16 +86,8 @@
         <button id="place-reset" type="button" class="secondary">실제 위치로 되돌리기</button>
       </fieldset>
       <fieldset>
-        <legend>판정</legend>
-        <label><input id="use-heading" type="checkbox"> 방향(나침반)을 판정에 반영</label>
-        <label class="sim-only">방향 <output id="heading-out">0</output>°
-          <input id="heading" type="range" min="0" max="359" step="1" value="0"></label>
-        <label><input id="show-zones" type="checkbox" checked> 촬영 존 표시</label>
-        <label><input id="test-mode" type="checkbox"> 테스트 모드 — 촬영마다 실제 건물 기록</label>
-      </fieldset>
-      <fieldset>
         <legend>데이터</legend>
-        <button id="reset" type="button" class="danger">방문 기록 초기화</button>
+        <button id="reset" type="button" class="danger">열린 곳·기록 초기화</button>
       </fieldset>
       <button class="primary" value="close">닫기</button>
     </form>
@@ -114,86 +98,87 @@
       <h2>방문 기록</h2>
       <div id="stats" class="stats"></div>
       <ul id="record-list" class="record-list"></ul>
-      <h3>촬영 로그 <span class="sub">— 탭해서 실제 건물 기록</span></h3>
-      <ol id="shot-log" class="shot-log" reversed></ol>
       <button id="export" type="button" class="secondary">기록 내보내기 (JSON)</button>
-      <p class="sub">사진은 이 기기에만 남아요. Safari는 오래 안 쓰면 사이트 데이터를 지울 수 있으니 테스트 후 내보내 두세요.</p>
+      <p class="sub">열린 시각·위치·방향은 이 기기에만 남아요. Safari는 오래 안 쓰면 사이트 데이터를 지울 수 있으니 체험 후 내보내 두세요.</p>
       <button class="primary" value="close">닫기</button>
     </form>
   </dialog>
 
-  <dialog id="truth">
+  <dialog id="card" class="card">
     <form method="dialog">
-      <h2>실제로 찍은 건물은?</h2>
-      <img id="truth-photo" class="truth-photo" alt="이 촬영의 사진" hidden>
-      <p id="truth-judged" class="sub"></p>
-      <div id="truth-choices" class="choices"></div>
-      <button class="secondary" value="skip">건너뛰기</button>
+      <figure id="card-figure" class="card-figure" hidden>
+        <img id="card-photo" alt="">
+        <figcaption id="card-credit" class="credit"></figcaption>
+      </figure>
+      <p id="card-fresh" class="card-fresh" hidden>🔓 새로 열렸어요</p>
+      <h2 id="card-name"></h2>
+      <p id="card-summary" class="card-summary"></p>
+      <details id="card-more" class="card-more">
+        <summary><span id="card-more-label">더 자세히 읽기</span></summary>
+        <div id="card-body" class="card-body"></div>
+        <div id="card-footnotes"></div>
+      </details>
+      <button class="primary" value="close">닫기</button>
     </form>
   </dialog>
 
   <dialog id="help" class="help">
     <form method="dialog">
       <h2>사용법</h2>
-      <p>사진을 찍는 <strong>순간의 위치(+방향)</strong>로 어느 건물 앞에서 찍었는지 판정해 자동으로 체크해요. 사진 내용은 보지 않아요.</p>
+      <p>덕수궁을 걸으며 <strong>물음표(?) 구역</strong>에 들어가 건물 쪽을 바라보면, 그곳의 사진과 설명이 자동으로 열려요. 사진을 찍을 필요는 없어요.</p>
 
       <h3>어떻게 쓸까요?</h3>
       <details>
         <summary><strong>집에서 둘러보기</strong> — 시뮬레이션</summary>
         <ol>
           <li>시작 화면에서 "시뮬레이션으로 둘러보기"</li>
-          <li>지도를 탭하면 그곳이 내 위치예요. 아래에 "지금 찍으면 → 건물 (확률)"이 떠요.</li>
-          <li>📷 촬영 → 그 건물이 초록색으로 체크되고 위의 진행률(n / 전체)이 늘어요.</li>
+          <li>회색 <strong>?</strong>를 탭하면 그 구역의 보는 자리로 옮겨 가요(방향도 건물 쪽으로). 그대로 2~3초 두면 열리고 설명 카드가 떠요.</li>
+          <li>지도의 다른 곳을 탭하면 그곳이 내 위치예요. ⚙︎ 설정의 "바라보는 방향"은 폰이 향한 쪽이에요(0° = 북) — 건물 쪽을 보게 맞춰야 열려요.</li>
         </ol>
-        <p class="sub">⚙︎ 설정에서 GPS 오차·방향을 바꾸면 판정이 어떻게 달라지는지 볼 수 있어요.</p>
       </details>
       <details>
-        <summary><strong>동네 공원에서 현장 테스트</strong> — 정확도 측정</summary>
-        <p class="sub">덕수궁 건물 배치(약 310 × 290 m)를 내 주변으로 옮겨, 가상 건물을 실제 GPS로 찍어 봐요.</p>
+        <summary><strong>동네 공원에서 체험</strong></summary>
+        <p class="sub">덕수궁 건물 배치(약 310 × 290 m)를 내 주변으로 옮겨, 실제로 걸으며 열어 봐요.</p>
         <ol>
           <li>넓은 공원에서 "현장에서 시작" → 위치·방향 권한 허용</li>
           <li>배치에서 멀리 있으면 아래에 "내 주변으로 건물 배치 옮기기" 버튼이 떠요. 누른 뒤 회전으로 공원 모양에 맞추고 "완료". (⚙︎ 설정 → 배치 옮기기·회전으로도 할 수 있어요)</li>
-          <li>⚙︎ 설정 → "테스트 모드" 켜기. 판정과 내 위치 점이 숨겨져요(◎는 배치 전체를 보여 줘요) — 지도 바탕(길·나무·시설)을 보고 가상 건물 앞에 서세요.</li>
-          <li>건물 쪽을 향해 📷 촬영 → "실제로 찍은 건물은?"에서 정답 선택 → 그때 판정이 맞았는지 보여요.</li>
-          <li>위의 진행률(n / 전체) → 정답률 확인 → "기록 내보내기 (JSON)"로 보관</li>
+          <li>지도의 ? 구역으로 걸어가 건물 쪽을 바라보고 잠시 멈추면 열려요.</li>
         </ol>
       </details>
       <details>
         <summary><strong>실제 덕수궁에서</strong></summary>
         <ol>
           <li>배치를 옮겼다면 되돌려요. 덕수궁 근처에서는 아래에 "덕수궁 실제 위치로 되돌리기" 버튼이 떠요. (⚙︎ 설정에도 있어요)</li>
-          <li>나머지는 동네 테스트의 3~5번과 같아요.</li>
+          <li>걸으며 ? 구역에 들어가 건물 쪽을 바라보면 열려요.</li>
         </ol>
-        <p class="sub">실제 덕수궁에서는 건물이 <strong>닫힌 채(회색)</strong> 시작하고 촬영 존도 숨겨져요. 찍으면 그 건물이 열려요 — 테스트 모드에서는 정답을 기록한 순간, 테스트 모드를 끄면 촬영하자마자 판정된 건물이 열려요.</p>
-        <p class="sub">진행률은 0부터 다시 세요. 이전 기록은 지워지지 않고 내보내기에 모두 들어가요.</p>
+        <p class="sub">열린 곳은 체험마다(시뮬레이션 / 동네 / 실제 궁) 따로 세요. 이전 기록은 지워지지 않고 내보내기에 모두 들어가요.</p>
       </details>
+
+      <h3>열리는 조건</h3>
+      <ul>
+        <li>구역 안에서 그 건물 쪽을 바라보며 <strong>2~3초 머물면</strong> 열려요. 나침반이 없으면 위치만으로 판단해요.</li>
+        <li>위의 진행률(n / 전체)을 누르면 열린 곳 목록이 나오고, 눌러서 설명을 다시 볼 수 있어요. 현장에서는 지도의 열린 구역을 눌러도 돼요.</li>
+        <li>폰을 가로로 들어도 돼요. iPhone은 가로로 들면 방향을 90° 보정해요(상태줄에 "가로 +90°").</li>
+      </ul>
 
       <h3>지도 보는 법</h3>
       <ul class="legend">
-        <li><span class="swatch" data-swatch="building"></span>건물</li>
-        <li><span class="swatch" data-swatch="zone"></span>촬영 존 — 이 안에서 건물 쪽을 찍으면 그 건물로 판정</li>
-        <li><span class="swatch" data-swatch="visited"></span>체크된(열린) 건물</li>
-        <li><span class="swatch" data-swatch="locked"></span>닫힌 건물 — 실제 덕수궁 현장 모드에서 아직 안 찍은 건물</li>
-        <li><span class="swatch" data-swatch="building+candidate"></span>지금 찍으면 체크될 건물</li>
+        <li><span class="swatch" data-swatch="locked"></span>아직 안 가 본 곳 — 이름 대신 ?</li>
+        <li><span class="swatch" data-swatch="area"></span>열린 곳 — 건물 이름이 보여요</li>
+        <li><span class="swatch" data-swatch="visited"></span>열린 곳의 건물</li>
+        <li><span class="swatch" data-swatch="locked+current"></span>지금 들어와 있는 곳 (노란 테두리)</li>
         <li><span class="swatch round" data-swatch="dot"></span>내 위치 (옅은 원 = GPS 오차, 부채꼴 = 폰이 향한 방향)</li>
         <li><span class="swatch" data-swatch="boundary"></span>궁 경계</li>
       </ul>
 
-      <h3>테스트 모드를 켜고 끄면</h3>
-      <ul>
-        <li><strong>끔</strong>: 찍기 전에 판정이 보여요. 촬영 흐름(UX) 확인용이라 정답률에 들어가지 않아요.</li>
-        <li><strong>켬</strong>: 판정을 숨기고, 찍은 뒤 정답을 기록해요. 정답률은 이 촬영만 세요.</li>
-        <li>"방향 반영"은 켜든 끄든 위치만 / 위치+방향 두 판정이 모두 기록돼요. 무엇으로 체크할지만 바뀌어요.</li>
-        <li>가로로 찍어도 돼요. iPhone은 가로로 들면 방향을 90° 보정해요 — 상태줄에 "가로 +90°"처럼 보여요. 지도의 파란 부채꼴이 카메라가 향한 쪽과 맞는지 확인해 보세요.</li>
-      </ul>
-
       <h3>막힐 때</h3>
       <ul>
-        <li><strong>"…km 떨어져 있어요"</strong>: 배치에서 500 m 넘게 떨어지면 촬영을 기록하지 않아요. 아래 버튼으로 배치를 옮기거나 되돌리세요.</li>
+        <li><strong>안 열려요</strong>: 건물 쪽을 바라보고 잠시 멈추세요. 상태줄에 "방향 없음"이면 나침반 없이 위치만으로 판단 중이에요.</li>
+        <li><strong>"…km 떨어져 있어요"</strong>: 배치에서 500 m 넘게 떨어지면 아무것도 열리지 않아요. 아래 버튼으로 배치를 옮기거나 되돌리세요.</li>
         <li><strong>"위치 신호가 끊겼어요"</strong>: 잠시 기다리거나 ◎를 누르세요. 30초 넘게 새 위치가 없을 때 ◎를 누르거나 화면을 다시 켜면 위치를 다시 요청해요.</li>
         <li><strong>"위치가 부정확해요"</strong>: 하늘이 트인 곳에서 잠시 기다리세요. iPhone은 "정확한 위치", Android는 "정확한 위치 사용"을 켜야 해요.</li>
-        <li><strong>권한을 거부했다면</strong>: 브라우저 설정에서 위치·카메라를 허용하고 새로고침하세요.</li>
-        <li><strong>사진과 기록은 이 폰에만</strong> 저장돼요. 테스트가 끝나면 바로 내보내세요.</li>
+        <li><strong>권한을 거부했다면</strong>: 브라우저 설정에서 위치를 허용하고 새로고침하세요.</li>
+        <li><strong>기록은 이 폰에만</strong> 저장돼요(열린 시각·위치·방향). 방문 기록 화면에서 내보낼 수 있어요.</li>
       </ul>
       <button class="primary" value="close">닫기</button>
     </form>

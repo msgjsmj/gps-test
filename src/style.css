@@ -71,18 +71,6 @@ body {
   border-radius: 6px;
   padding: 1px 6px;
 }
-.shoot {
-  border: 0;
-  border-radius: var(--radius);
-  padding: 16px;
-  font: inherit;
-  font-size: 18px;
-  font-weight: 800;
-  color: #fff;
-  background: var(--brand);
-}
-.shoot:active { transform: scale(.98); }
-.shoot:disabled { opacity: .5; }
 
 .toast {
   position: fixed;
@@ -195,53 +183,6 @@ body.placing #map { cursor: crosshair; outline: 4px solid var(--accent); outline
 .place-bar .row button { flex: 1; }
 #notice-text { margin: 0; line-height: 1.5; white-space: pre-line; }
 /* fixed box: shown before the photo loads, so the choices below never move */
-.truth-photo { display: block; width: 100%; height: 28dvh; object-fit: contain; border-radius: 10px; background: #000; color: #fff; text-align: center; }
-.truth-photo[hidden] { display: none; }
-
-.camera { background: #000; }
-.camera video { width: 100%; height: 100%; object-fit: cover; }
-.camera-preview {
-  position: absolute;
-  top: calc(12px + var(--safe-t));
-  left: 12px;
-  right: 12px;
-  margin: 0;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: rgba(0, 0, 0, .55);
-  color: #fff;
-  font-weight: 700;
-  text-align: center;
-}
-.camera-bar {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  padding: 16px 24px calc(24px + var(--safe-b));
-}
-.camera-shutter {
-  width: 76px;
-  height: 76px;
-  border-radius: 50%;
-  border: 5px solid #fff;
-  background: rgba(255, 255, 255, .35);
-}
-.camera-shutter:active { background: #fff; }
-.camera-close {
-  justify-self: start;
-  width: 48px;
-  height: 48px;
-  border: 0;
-  border-radius: 50%;
-  background: rgba(0, 0, 0, .5);
-  color: #fff;
-  font-size: 20px;
-}
-
 .locate-btn {
   width: 34px;
   height: 34px;
@@ -267,24 +208,6 @@ dialog h3 { margin: 4px 0 0; font-size: 15px; }
 .stats p { margin: 0; }
 .stats strong { font-size: 15px; }
 
-.shot-log { margin: 0; padding: 0 0 0 24px; display: grid; gap: 4px; font-size: 13px; }
-.shot-log button { all: unset; cursor: pointer; display: block; padding: 6px 8px; border-radius: 8px; background: #f7fafc; }
-.shot-log .ok { color: var(--ok); font-weight: 700; }
-.shot-log .ng { color: var(--danger); font-weight: 700; }
-
-.choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
-.choices button {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 12px 8px;
-  background: #fff;
-  color: var(--ink);
-  font: inherit;
-  font-weight: 600;
-}
-.choices button.candidate { border-color: var(--accent); background: #fffff0; }
-.choices button.none { color: var(--muted); }
-
 .bldg-label {
   background: rgba(255, 255, 255, .8);
   border: 0;
@@ -295,7 +218,6 @@ dialog h3 { margin: 4px 0 0; font-size: 15px; }
   color: var(--ink);
 }
 .bldg-label::before { display: none; }
-.bldg-label.locked { color: #8a94a6; background: rgba(255, 255, 255, .55); } /* Leaflet sets inline opacity, so dim by colour */
 .leaflet-interactive.unlock-pulse { animation: unlock-pulse 1.2s ease-out; }
 @keyframes unlock-pulse {
   0% { stroke-width: 14px; fill-opacity: .9; }
@@ -322,3 +244,34 @@ dialog h3 { margin: 4px 0 0; font-size: 15px; }
 .help .legend li { display: flex; align-items: center; gap: 10px; }
 .swatch { flex: none; width: 28px; height: 18px; border-radius: 4px; }
 .swatch.round { width: 18px; height: 18px; margin: 0 5px; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0, 0, 0, .25); }
+
+/* Closed areas: a "?" over the buildings instead of their names. */
+.area-q {
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #718096;
+  color: #fff;
+  font-weight: 800;
+  font-size: 17px;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, .85), 0 2px 6px rgba(0, 0, 0, .3);
+}
+.record-list li.locked { color: var(--muted); }
+.record-list li.locked .mark { font-weight: 800; }
+
+/* The place card: photo, summary, then the full text folded away (as on the web guide). */
+.card { width: min(520px, calc(100vw - 24px)); }
+.card form { gap: 10px; }
+.card-figure { margin: -16px -16px 0; }
+.card-figure[hidden] { display: none; }
+.card-figure img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--radius) var(--radius) 0 0; background: var(--line); }
+.credit { padding: 4px 16px 0; font-size: 11px; color: var(--muted); }
+.credit a { color: inherit; }
+.card-fresh { justify-self: start; margin: 0; padding: 2px 8px; border-radius: 999px; background: #c6f6d5; color: var(--ok); font-size: 13px; font-weight: 700; }
+.card-fresh[hidden] { display: none; }
+.card-summary { margin: 0; padding: 12px 14px; border-radius: 10px; background: #fefcbf; font-size: 16px; line-height: 1.6; }
+.card-more > summary { cursor: pointer; padding: 10px 0; font-weight: 700; color: var(--brand); }
+.card-body p { margin: 0 0 10px; line-height: 1.7; }
+.footnote { margin-top: 6px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; font-size: 14px; }
+.footnote summary { cursor: pointer; font-weight: 700; }
+.footnote p { margin: 8px 0 0; line-height: 1.6; }

@@ -66,3 +66,12 @@ test('export carries metadata and per-mode stats', () => {
   assert.equal(p.area.declination, -9);
   assert.equal(p.stats['gps|blind|real'].labeled, 1);
 });
+
+test('openings count per test as distinct areas, apart from older photo shots', () => {
+  const open = (placeId, placement = real) => ({ id: Math.random().toString(36), at: '2026-10-20T01:00:00.000Z', kind: 'open', mode: 'gps', placement, blind: false, placeId, judgments: { position: { best: 'x' }, heading: null } });
+  const s = statsByTest([open('A'), open('B'), open('A'), open('C', park), visit('A', 'A', 'A', 'gps', real, false)], anchor);
+  assert.deepEqual(s['gps|open|real'].opened, ['A', 'B']);
+  assert.equal(s['gps|open|real'].shots, 1); // the older shot only
+  assert.deepEqual(s['gps|open|37.4000,127.1000'].opened, ['C']);
+  assert.equal(exportPayload({ id: 'x', name: 'X', anchor }, [open('A')]).format, 'gps-test-visits/3');
+});

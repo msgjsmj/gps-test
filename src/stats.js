@@ -1,5 +1,8 @@
-// Field-test numbers: how often each judgment mode matched the ground truth
-// tagged in test mode. truth is a building id, or 'none' for "no building".
+// Records per test. Since 2026-10-20 a record is an area opening (kind 'open', placeId);
+// earlier ones are photo shots whose ground truth was tagged in test mode (truth is a
+// building id, or 'none' for "no building"). Both stay in storage and exports.
+
+const isOpen = (v) => v.kind === 'open';
 
 const answer = (judgment) => judgment.best ?? 'none';
 
@@ -39,15 +42,16 @@ export function statsByTest(visits, areaAnchor) {
     [...groups].map(([key, list]) => {
       const { mode, blind, placement } = list[0];
       const firstAt = list.reduce((min, v) => (v.at < min ? v.at : min), list[0].at); // tells same-named tests apart
-      return [key, { mode, blind: !!blind, realPlacement: isRealPlacement(placement, areaAnchor), firstAt, ...accuracyStats(list) }];
+      const opened = [...new Set(list.filter(isOpen).map((v) => v.placeId))];
+      return [key, { mode, blind: !!blind, realPlacement: isRealPlacement(placement, areaAnchor), firstAt, opened, ...accuracyStats(list.filter((v) => !isOpen(v))) }];
     }),
   );
 }
 
-// Visits are metadata only (photos stay on the device), so they export as-is.
+// Records are metadata only, so they export as-is.
 export function exportPayload(area, visits, exportedAt = new Date()) {
   return {
-    format: 'gps-test-visits/2', // 2: visits carry `blind`; stats keyed by testContext
+    format: 'gps-test-visits/3', // 3: area openings (kind 'open') next to older shots; 2: `blind`, stats by testContext
     exportedAt: exportedAt.toISOString(),
     area: { id: area.id, name: area.name, anchor: area.anchor, declination: area.declination, source: area.source },
     stats: statsByTest(visits, area.anchor), // keyed by testContext(); recompute freely from visits

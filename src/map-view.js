@@ -1,7 +1,7 @@
 // Leaflet rendering only. Everything is drawn from local-meter data through
 // the current placement, so swapping the base map never touches the data.
 
-import { toGeo, toLocal } from './geo.js';
+import { centroid, toGeo, toLocal } from './geo.js';
 
 const L = window.L;
 
@@ -13,17 +13,19 @@ const BASE_TILES = {
 
 export const STYLE = { // also paints the legend in the help dialog
   boundary: { color: '#8a5a2b', weight: 2, dashArray: '6 6', fill: false, interactive: false },
-  zone: { color: '#2b6cb0', weight: 1, dashArray: '4 4', fillColor: '#4299e1', fillOpacity: 0.12, interactive: false },
-  building: { color: '#c05621', weight: 2, fillColor: '#ed8936', fillOpacity: 0.25 },
+  locked: { color: '#718096', weight: 1.5, dashArray: '4 4', fillColor: '#a0aec0', fillOpacity: 0.5, interactive: false },
+  area: { color: '#2f855a', weight: 2, fillColor: '#68d391', fillOpacity: 0.4, interactive: false },
   visited: { color: '#276749', weight: 2, fillColor: '#38a169', fillOpacity: 0.55 },
-  locked: { color: '#a0aec0', weight: 1.5, dashArray: '4 4', fillColor: '#cbd5e0', fillOpacity: 0.3 },
-  candidate: { color: '#d69e2e', weight: 5 },
+  building: { color: '#c05621', weight: 2, fillColor: '#ed8936', fillOpacity: 0.25 }, // a building in no area
+  current: { color: '#d69e2e', weight: 4 },
   accuracy: { color: '#3182ce', weight: 1, fillOpacity: 0.12, interactive: false },
   dot: { radius: 7, color: '#fff', weight: 2, fillColor: '#3182ce', fillOpacity: 1, interactive: false },
   heading: { color: '#3182ce', weight: 0, fillOpacity: 0.35, interactive: false },
 };
 
-// Restarts the CSS "opening" animation on a building outline.
+const LABEL = { permanent: true, direction: 'center', className: 'bldg-label' };
+
+// Restarts the CSS "opening" animation on an outline.
 function pulse(shape) {
   const el = shape.getElement();
   if (!el) return;
@@ -46,7 +48,7 @@ const LocateControl = L.Control.extend({
   },
 });
 
-export function createMapView(el, { onMapClick, onBuildingClick, onLocate }) {
+export function createMapView(el, { onMapClick, onBuildingClick, onAreaClick, onLocate }) {
   const map = L.map(el, { zoomControl: false, attributionControl: true });
   L.tileLayer(BASE_TILES.url, BASE_TILES.options).addTo(map);
   L.control.zoom({ position: 'topright' }).addTo(map);
@@ -54,44 +56,58 @@ export function createMapView(el, { onMapClick, onBuildingClick, onLocate }) {
   // The map row resizes with the bottom sheet, not only with the window.
   new ResizeObserver(() => map.invalidateSize()).observe(el);
 
+  const zoneLayer = L.layerGroup().addTo(map); // under the buildings
   const areaLayer = L.layerGroup().addTo(map);
-  const zoneLayer = L.layerGroup().addTo(map);
   const meLayer = L.layerGroup().addTo(map);
   const me = {
     accuracy: L.circle([0, 0], { ...STYLE.accuracy, radius: 1 }),
     wedge: L.polygon([[0, 0]], STYLE.heading),
     dot: L.circleMarker([0, 0], STYLE.dot),
   };
-  let placement = null, buildingShapes = new Map(), zoneShapes = new Map(), boundaryShape = null, lastAnimateKey = null;
+  let placement = null, buildingShapes = new Map(), areaShapes = new Map(), boundaryShape = null, lastAnimateKey = null;
 
   const ll = (p) => {
     const g = toGeo(placement, p);
     return [g.lat, g.lng];
   };
+  const local = (latlng) => toLocal(placement, { lat: latlng.lat, lng: latlng.lng });
 
-  map.on('click', (e) => onMapClick?.(toLocal(placement, { lat: e.latlng.lat, lng: e.latlng.lng })));
+  map.on('click', (e) => onMapClick?.(local(e.latlng)));
 
   return {
     map,
 
-    // Redraw the whole area for a placement (also used when it moves).
-    setArea(area, buildings, nextPlacement) {
+    // Redraw everything for a placement (also used when it moves). An area is drawn as its
+    // buildings' viewing zones and footprints, with a "?" over it while it is still closed.
+    setArea(area, buildings, nextPlacement, areas) {
       placement = nextPlacement;
-      areaLayer.clearLayers();
       zoneLayer.clearLayers();
+      areaLayer.clearLayers();
       buildingShapes = new Map();
-      zoneShapes = new Map();
+      areaShapes = new Map();
       boundaryShape = L.polygon(area.boundary.map(ll), STYLE.boundary).addTo(areaLayer);
       for (const b of buildings) {
-        zoneShapes.set(b.id, b.zones.map((z) => L.polygon(z.map(ll), STYLE.zone).addTo(zoneLayer)));
         const shape = L.polygon(b.footprint.map(ll), STYLE.building)
-          .bindTooltip(b.label ?? b.name, { permanent: true, direction: 'center', className: 'bldg-label' })
+          .bindTooltip(b.label ?? b.name, LABEL)
           .on('click', (e) => {
             L.DomEvent.stopPropagation(e);
-            onBuildingClick?.(b.id, toLocal(placement, { lat: e.latlng.lat, lng: e.latlng.lng }));
+            onBuildingClick?.(b.id, local(e.latlng));
           })
           .addTo(areaLayer);
+        shape.label = b.label ?? b.name;
         buildingShapes.set(b.id, shape);
+      }
+      for (const a of areas) {
+        const members = buildings.filter((b) => a.buildingIds.includes(b.id));
+        const zones = members.flatMap((b) => b.zones.map((z) => L.polygon(z.map(ll), STYLE.locked).addTo(zoneLayer)));
+        const centers = members.map((b) => centroid(b.footprint));
+        const center = [centers.reduce((s, c) => s + c[0], 0) / centers.length, centers.reduce((s, c) => s + c[1], 0) / centers.length];
+        const marker = L.marker(ll(center), { icon: L.divIcon({ className: 'area-q', html: '?', iconSize: [30, 30] }), keyboard: false })
+          .on('click', (e) => {
+            L.DomEvent.stopPropagation(e);
+            onAreaClick?.(a.key, local(e.latlng));
+          });
+        areaShapes.set(a.key, { zones, footprints: members.map((b) => buildingShapes.get(b.id)), marker });
       }
     },
 
@@ -104,38 +120,33 @@ export function createMapView(el, { onMapClick, onBuildingClick, onLocate }) {
       map.setView(ll(point), zoom ?? Math.max(map.getZoom(), 18));
     },
 
-    focus(id) {
-      const shape = buildingShapes.get(id);
-      if (shape) map.fitBounds(shape.getBounds(), { maxZoom: 19, padding: [80, 80] });
-    },
-
-    // Restyles only buildings whose state changed (this runs several times a second).
-    // locked: unvisited buildings look closed and keep their photo zones hidden; a building
-    // that becomes visited while locked "opens" with a short pulse and shows its zones.
-    // animateKey: the pulse runs only when it equals the previous render's (same test, not a
-    // bulk change); null never animates.
-    render({ visited, candidateId, showZones, locked = false, animateKey = null }) {
-      const animate = locked && animateKey !== null && animateKey === lastAnimateKey;
+    // Restyles only areas whose state changed (this runs several times a second). A closed area is
+    // grey with a "?" and no building names; an open one shows its colour and names. current: the
+    // area the visitor stands in. animateKey: an area that opens pulses only when this equals the
+    // previous render's (same test, not a bulk load); null never animates.
+    render({ opened, current, animateKey = null }) {
+      const animate = animateKey !== null && animateKey === lastAnimateKey;
       lastAnimateKey = animateKey;
-      for (const [id, shape] of buildingShapes) {
-        const open = visited.has(id);
-        const opening = animate && shape.wasOpen === false && open;
-        shape.wasOpen = open;
-        if (opening) pulse(shape);
-        const key = `${open}|${id === candidateId}|${locked}`;
-        if (shape.styleKey === key) continue;
-        shape.styleKey = key;
-        const base = open ? STYLE.visited : locked ? STYLE.locked : STYLE.building;
-        shape.setStyle({ dashArray: null, ...base, ...(id === candidateId ? STYLE.candidate : {}) });
-        shape.getTooltip()?.getElement()?.classList.toggle('locked', locked && !open);
-        for (const z of zoneShapes.get(id) ?? []) {
-          const show = !locked || open;
-          if (show && !zoneLayer.hasLayer(z)) zoneLayer.addLayer(z);
-          if (!show && zoneLayer.hasLayer(z)) zoneLayer.removeLayer(z);
+      for (const [key, s] of areaShapes) {
+        const open = opened.has(key);
+        const opening = animate && s.wasOpen === false && open;
+        s.wasOpen = open;
+        const styleKey = `${open}|${key === current}`;
+        if (s.styleKey !== styleKey) {
+          s.styleKey = styleKey;
+          for (const z of s.zones) z.setStyle({ dashArray: null, ...(open ? STYLE.area : STYLE.locked), ...(key === current ? STYLE.current : {}) });
+          for (const f of s.footprints) {
+            f.setStyle({ dashArray: null, ...(open ? STYLE.visited : STYLE.locked) });
+            // Bound or not (rather than closed): the first render can run before Leaflet has added the
+            // shapes, and adding opens a permanent tooltip again.
+            if (open && !f.getTooltip()) f.bindTooltip(f.label, LABEL);
+            if (!open) f.unbindTooltip();
+          }
+          if (open) s.marker.remove();
+          else if (!areaLayer.hasLayer(s.marker)) s.marker.addTo(areaLayer);
         }
+        if (opening) [...s.zones, ...s.footprints].forEach(pulse);
       }
-      if (showZones && !map.hasLayer(zoneLayer)) zoneLayer.addTo(map);
-      if (!showZones && map.hasLayer(zoneLayer)) zoneLayer.remove();
     },
 
     // point in local meters; heading as a local bearing or null. Layers are

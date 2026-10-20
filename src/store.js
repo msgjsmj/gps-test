@@ -1,7 +1,6 @@
-// On-device persistence. Visit metadata and photo blobs live in separate
-// IndexedDB stores: WebKit fails to re-store a Blob that was read back from
-// IndexedDB (bug 235687), so a photo is written exactly once at capture and
-// re-labelling a visit rewrites metadata only. Small per-device settings live
+// On-device persistence. Records (area openings; photo shots before 2026-10-20) live in
+// IndexedDB; the old `photos` store stays in the schema only so its blobs can be cleared.
+// Small per-device settings live
 // in localStorage. Storage can be unavailable (private mode, blocked, iOS
 // dropping the connection in the background), so callers treat every write as
 // "may fail, retry later".
@@ -71,8 +70,7 @@ export async function loadVisits() {
 }
 
 export const saveVisit = (visit) => run('visits', 'readwrite', (s) => s.put(visit));
-export const savePhoto = (id, blob) => run('photos', 'readwrite', (s) => s.put(blob, id));
-export const loadPhoto = (id) => run('photos', 'readonly', (s) => s.get(id));
+// Photos of shots from before 2026-10-20 (no new ones are taken) are cleared with everything else.
 export const clearAll = () => Promise.all([run('visits', 'readwrite', (s) => s.clear()), run('photos', 'readwrite', (s) => s.clear())]);
 
 // Ask the browser not to evict our data under storage pressure (best effort).
