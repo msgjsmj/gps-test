@@ -52,6 +52,7 @@ test('numbers never mix tests (park vs palace, simulation vs field)', () => {
   assert.equal(s['gps|blind|37.4000,127.1000'].shots, 2);
   assert.equal(s['gps|blind|37.4000,127.1000'].position.correct, 1);
   assert.equal(s['gps|open|real'].shots, 1);
+  assert.equal(s['gps|open|real'].firstAt, '2026-10-20T00:00:00.000Z');
   assert.deepEqual([s['gps|open|real'].blind, s['gps|open|real'].realPlacement], [false, true]);
   assert.deepEqual([s['gps|blind|37.4000,127.1000'].blind, s['gps|blind|37.4000,127.1000'].realPlacement], [true, false]);
 });

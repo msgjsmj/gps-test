@@ -38,7 +38,8 @@ export function statsByTest(visits, areaAnchor) {
   return Object.fromEntries(
     [...groups].map(([key, list]) => {
       const { mode, blind, placement } = list[0];
-      return [key, { mode, blind: !!blind, realPlacement: isRealPlacement(placement, areaAnchor), ...accuracyStats(list) }];
+      const firstAt = list.reduce((min, v) => (v.at < min ? v.at : min), list[0].at); // tells same-named tests apart
+      return [key, { mode, blind: !!blind, realPlacement: isRealPlacement(placement, areaAnchor), firstAt, ...accuracyStats(list) }];
     }),
   );
 }

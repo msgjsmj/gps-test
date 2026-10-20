@@ -23,7 +23,7 @@ const state = {
   placement: null,
   mode: 'sim',
   sim: { point: null, accuracy: 10, heading: 0 },
-  gps: { fix: null, error: null, stop: null, centered: false, lastAt: 0, staleBefore: 0 },
+  gps: { fix: null, error: null, stop: null, centered: false, lastAt: 0, staleBefore: 0, droppedCached: false },
   compass: { reading: null, stop: null, denied: false, startedAt: 0 },
   useHeading: false,
   showZones: true,
@@ -261,6 +261,7 @@ setInterval(() => state.mode === 'gps' && scheduleRefresh(), 1000); // ages and 
 
 const GPS_ERRORS = { 1: '위치 권한이 거부됐어요 — 안내대로 허용한 뒤 새로고침해 주세요', 2: '위치를 확인할 수 없어요', 3: '위치 응답이 늦어요 — 계속 시도 중' };
 const POOR_ACCURACY = 50; // meters; beyond this no building can be told apart
+const CACHED_FIX_AGE = 120_000; // ms by the fix's own clock; generous for clock skew
 const BLIND_POSITION = '테스트 모드에서는 내 위치를 숨겨요 — 지도 바탕(길·나무·시설)을 보고 서 주세요';
 const PLACE_MAX_ACCURACY = 30; // meters; centering the layout on a worse fix misplaces it
 const LOCATION_HELP = 'iPhone: 설정 → 개인정보 보호 및 보안 → 위치 서비스 → Safari 웹 사이트 → "앱을 사용하는 동안", "정확한 위치" 켬\nAndroid Chrome: 주소창 왼쪽 아이콘 → 권한 → 위치 허용\n그다음 페이지를 새로고침하세요.';
@@ -276,6 +277,12 @@ function startGps() {
       // After the page was hidden, a fix stamped no later than the last one seen before
       // hiding is a cached pre-lock position (iOS replays it on resume): ignore it.
       if (fix.at <= state.gps.staleBefore) return;
+      // A first fix stamped minutes ago is a cached position handed over at start-up. Drop it
+      // once only, so a phone with a wrong clock still gets positions after that.
+      if (!state.gps.lastAt && !state.gps.droppedCached && Date.now() - fix.at > CACHED_FIX_AGE) {
+        state.gps.droppedCached = true;
+        return;
+      }
       state.gps.lastAt = fix.at;
       state.gps.fix = fix;
       state.gps.error = null;
@@ -302,7 +309,7 @@ function startGps() {
 
 function stopGps() {
   state.gps.stop?.();
-  Object.assign(state.gps, { stop: null, fix: null, error: null, centered: false, lastAt: 0, staleBefore: 0 });
+  Object.assign(state.gps, { stop: null, fix: null, error: null, centered: false, lastAt: 0, staleBefore: 0, droppedCached: false });
 }
 
 // Must be called synchronously inside a tap handler (iOS permission prompt).
@@ -666,7 +673,8 @@ function renderStats() {
     const accuracy = t.blind
       ? ` · 정답 기록 ${t.labeled}장${t.labeled ? ` · 위치만 ${ratio(t.position.correct, t.position.total)}` : ''}${t.paired.total ? ` · 방향 있는 ${t.paired.total}장: 위치+방향 ${ratio(t.paired.heading, t.paired.total)}` : ''}`
       : '';
-    lines.push(line(`${testLabel(t)} — 촬영 ${t.shots}장${accuracy}`));
+    const since = new Date(t.firstAt).toLocaleString([], { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    lines.push(line(`${testLabel(t)} (${since}부터) — 촬영 ${t.shots}장${accuracy}`));
   }
   if (unsavedCount()) lines.push(line(`⚠︎ 아직 저장되지 않은 항목 ${unsavedCount()}건 — 내보내기로 보관하세요`));
   $('#stats').replaceChildren(...lines);
@@ -766,7 +774,8 @@ function bindControls() {
     const v = truthTarget;
     truthTarget = null;
     refresh();
-    if (v.blind && !v.truth) return toast('정답 미기록 — 방문 기록 화면의 로그에서 나중에 기록할 수 있어요');
+    if (v.truth) return toast(`정답은 그대로예요: ${truthName(v.truth)}`);
+    if (v.blind) return toast('정답 미기록 — 방문 기록 화면의 로그에서 나중에 기록할 수 있어요');
     toast(`정답 미기록 — 판정은 ${v.buildingId ? nameOf(v.buildingId) : '건물 없음'}`);
   });
   $('#records').addEventListener('close', () => {
