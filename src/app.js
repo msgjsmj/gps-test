@@ -25,7 +25,7 @@ const state = {
   photos: {}, // place key → { file, author, license, licenseUrl, page }
   placement: null,
   mode: 'sim',
-  sim: { point: null, accuracy: 10, heading: 0 },
+  sim: { point: null, accuracy: 10 }, // no heading: simulation judges by position only
   gps: { fix: null, error: null, stop: null, centered: false, lastAt: 0, staleBefore: 0, droppedCached: false, watchedAt: 0, lastFixAt: 0 },
   compass: { reading: null, stop: null, denied: false, startedAt: 0 },
   placing: false, // the placement bar is open: map taps move the layout
@@ -66,15 +66,11 @@ function tapShape(key, point) {
   toast('아직 안 가 본 곳이에요 — 가까이 가서 건물 쪽을 바라보면 열려요');
 }
 
-// Simulation: the "?" sits on the buildings, where nothing can be aimed at (a spot inside a footprint
-// says nothing about where the camera points). Tapping it puts the visitor at the area's first viewing
-// spot instead, facing the building.
+// Simulation: an area's "?" can sit between its buildings, outside every viewing zone. Tapping it puts
+// the visitor at the area's first viewing spot instead.
 function stepInto(key) {
   const b = state.buildings.find((x) => x.id === areaOf(key).buildingIds[0]);
   state.sim.point = centroid(b.zones[0]);
-  state.sim.heading = Math.round(normDeg(b.facing[0] + 180 + (state.placement.rotationDeg || 0)));
-  $('#heading').value = state.sim.heading;
-  $('#heading-out').textContent = state.sim.heading;
   refresh();
 }
 
@@ -159,7 +155,7 @@ function resetPlacement() {
 
 // Raw world values plus their local-frame form, or null without a usable position.
 // heading.value is a TRUE-north bearing (magnetic readings are corrected by the
-// area's declination); in simulation it is the settings slider.
+// area's declination); simulation has none, so it judges by position only.
 function observe() {
   const now = Date.now();
   let fix;
@@ -172,9 +168,7 @@ function observe() {
     if (!fix || now - fix.receivedAt > MAX_FIX_AGE) return null;
   }
   let heading = null;
-  if (state.mode === 'sim') {
-    heading = { value: state.sim.heading, accuracy: null, source: 'sim', at: now };
-  } else {
+  if (state.mode === 'gps') {
     const r = state.compass.reading;
     if (r && now - r.at <= MAX_HEADING_AGE) heading = r;
   }
@@ -256,7 +250,7 @@ function sensorText(obs) {
 }
 
 function sensorParts(obs) {
-  if (state.mode === 'sim') return [`방향 ${state.sim.heading}°`];
+  if (state.mode === 'sim') return ['위치로만 판정'];
   const parts = [];
   const fix = state.gps.fix;
   if (fix) parts.push(`GPS ±${Math.round(fix.accuracy)}m${ageNote(fix)}`);
@@ -485,9 +479,19 @@ function openArea(key, obs, p) {
   persist(record);
   refresh();
   navigator.vibrate?.(80);
-  // Never cover what the visitor is reading or doing; the card waits in the records.
-  if (document.querySelector('dialog[open]')) return toast(`🔓 ${areaOf(key).name} 열렸어요 — 방문 기록에서 볼 수 있어요`, true);
+  // Never cover what the visitor is reading or doing: the card follows as soon as that closes.
+  if ($('#records').open) renderRecords(); // the list shows it at once (tapping it opens the card)
+  if (document.querySelector('dialog[open]')) {
+    pendingCards.push(key);
+    return toast(`🔓 ${areaOf(key).name} 열렸어요 — 이 화면을 닫으면 설명이 떠요`, true);
+  }
   showCard(key, { fresh: true });
+}
+
+// Areas that opened while a dialog was up, oldest first. Each still gets its first, automatic card.
+const pendingCards = [];
+function showPendingCard() {
+  if (pendingCards.length && !document.querySelector('dialog[open]')) showCard(pendingCards.shift(), { fresh: true });
 }
 
 // ---- persistence ---------------------------------------------------------------
@@ -618,6 +622,9 @@ const paragraph = (text) => Object.assign(document.createElement('p'), { textCon
 // Photo with its credit, summary, then the full text and footnotes folded away — as on the web guide.
 function showCard(key, { fresh = false } = {}) {
   const { place } = areaOf(key);
+  const waiting = pendingCards.indexOf(key);
+  if (waiting >= 0) pendingCards.splice(waiting, 1); // opened by hand first (e.g. from the records)
+  fresh ||= waiting >= 0;
   const photo = state.photos[key];
   $('#card-figure').hidden = !photo;
   if (photo) {
@@ -726,6 +733,7 @@ function bindControls() {
   for (const id of ['#start-help', '#open-help']) $(id).addEventListener('click', () => $('#help').showModal());
   $('#preview-action').addEventListener('click', () => previewAction?.());
   $('#card-more').addEventListener('toggle', () => ($('#card-more-label').textContent = $('#card-more').open ? '접기' : '더 자세히 읽기'));
+  for (const dialog of document.querySelectorAll('dialog')) dialog.addEventListener('close', showPendingCard);
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && state.gps.fix) {
       // The visitor may walk while the screen is off; never judge with the pre-lock position.
@@ -750,11 +758,6 @@ function bindControls() {
   $('#accuracy').addEventListener('input', (e) => {
     state.sim.accuracy = Number(e.target.value);
     $('#accuracy-out').textContent = e.target.value;
-    refresh();
-  });
-  $('#heading').addEventListener('input', (e) => {
-    state.sim.heading = Number(e.target.value);
-    $('#heading-out').textContent = e.target.value;
     refresh();
   });
   $('#place-start').addEventListener('click', startPlacing);

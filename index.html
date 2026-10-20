@@ -76,8 +76,6 @@
         <legend>시뮬레이션</legend>
         <label>GPS 오차 <output id="accuracy-out">10</output> m
           <input id="accuracy" type="range" min="3" max="40" step="1" value="10"></label>
-        <label>바라보는 방향 <output id="heading-out">0</output>° (0 = 북)
-          <input id="heading" type="range" min="0" max="359" step="1" value="0"></label>
       </fieldset>
       <fieldset>
         <legend>건물 배치</legend>
@@ -132,8 +130,8 @@
         <summary><strong>집에서 둘러보기</strong> — 시뮬레이션</summary>
         <ol>
           <li>시작 화면에서 "시뮬레이션으로 둘러보기"</li>
-          <li>회색 <strong>?</strong>를 탭하면 그 구역의 보는 자리로 옮겨 가요(방향도 건물 쪽으로). 그대로 2~3초 두면 열리고 설명 카드가 떠요.</li>
-          <li>지도의 다른 곳을 탭하면 그곳이 내 위치예요. ⚙︎ 설정의 "바라보는 방향"은 폰이 향한 쪽이에요(0° = 북) — 건물 쪽을 보게 맞춰야 열려요.</li>
+          <li>회색 <strong>?</strong>를 탭하면 그 구역의 보는 자리로 옮겨 가요. 그대로 2~3초 두면 열리고 설명 카드가 떠요.</li>
+          <li>지도의 다른 곳을 탭하면 그곳이 내 위치예요. 시뮬레이션은 방향 없이 위치만으로 판단해요.</li>
         </ol>
       </details>
       <details>
@@ -156,7 +154,8 @@
 
       <h3>열리는 조건</h3>
       <ul>
-        <li>구역 안에서 그 건물 쪽을 바라보며 <strong>2~3초 머물면</strong> 열려요. 나침반이 없으면 위치만으로 판단해요.</li>
+        <li>구역 안에서 그 건물 쪽을 바라보며 <strong>2~3초 머물면</strong> 열리고, 설명 카드가 바로 떠요. 다른 화면(설정·기록 등)을 보던 중이면 그 화면을 닫을 때 떠요.</li>
+        <li>나침반이 없으면 위치만으로 판단해요. 시뮬레이션은 늘 위치만으로 판단해요.</li>
         <li>위의 진행률(n / 전체)을 누르면 열린 곳 목록이 나오고, 눌러서 설명을 다시 볼 수 있어요. 현장에서는 지도의 열린 구역을 눌러도 돼요.</li>
         <li>폰을 가로로 들어도 돼요. iPhone은 가로로 들면 방향을 90° 보정해요(상태줄에 "가로 +90°").</li>
       </ul>
