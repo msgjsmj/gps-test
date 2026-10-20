@@ -16,6 +16,7 @@
   <header class="bar">
     <h1 id="title">방문 체크</h1>
     <button id="progress" class="chip" type="button" aria-label="방문 기록 보기">0 / 0</button>
+    <button id="open-help" class="icon-btn" type="button" aria-label="사용법">?</button>
     <button id="open-settings" class="icon-btn" type="button" aria-label="설정">⚙︎</button>
   </header>
 
@@ -27,6 +28,7 @@
       <p id="preview-main">지도를 탭해서 내 위치를 정하세요</p>
       <p id="preview-sub" class="sub"></p>
     </div>
+    <button id="preview-action" class="secondary" type="button" hidden></button>
     <button id="shoot" class="shoot" type="button">📷 촬영</button>
   </section>
 
@@ -54,9 +56,10 @@
     <h2 id="start-title">방문 체크</h2>
     <p id="start-note">건물 사진을 찍으면, 찍은 위치로 어느 건물을 방문했는지 자동으로 체크해요.</p>
     <button id="start-gps" class="primary big" type="button" disabled>현장에서 시작</button>
-    <p class="sub">위치·방향 권한을 지금 요청해요. 카메라는 첫 촬영 때 물어봐요.</p>
+    <p class="sub">실제 GPS로 찍어요. 덕수궁이 아니어도 돼요 — 동네 공원에 건물 배치를 옮겨 테스트할 수 있어요. 위치·방향 권한은 지금, 카메라는 첫 촬영 때 물어봐요.</p>
     <button id="start-sim" class="secondary big" type="button" disabled>시뮬레이션으로 둘러보기</button>
-    <p class="sub">지도를 탭한 곳을 내 위치로 써요.</p>
+    <p class="sub">지도를 탭한 곳을 내 위치로 써요. 집이나 PC에서 판정을 미리 보기 좋아요.</p>
+    <button id="start-help" class="link-btn" type="button">처음이라면 — 사용법 보기</button>
   </section>
 
   <section id="camera" class="overlay camera" hidden>
@@ -124,6 +127,69 @@
       <p id="truth-judged" class="sub"></p>
       <div id="truth-choices" class="choices"></div>
       <button class="secondary" value="skip">건너뛰기</button>
+    </form>
+  </dialog>
+
+  <dialog id="help" class="help">
+    <form method="dialog">
+      <h2>사용법</h2>
+      <p>사진을 찍는 <strong>순간의 위치(+방향)</strong>로 어느 건물 앞에서 찍었는지 판정해 자동으로 체크해요. 사진 내용은 보지 않아요.</p>
+
+      <h3>어떻게 쓸까요?</h3>
+      <details>
+        <summary><strong>집에서 둘러보기</strong> — 시뮬레이션</summary>
+        <ol>
+          <li>시작 화면에서 "시뮬레이션으로 둘러보기"</li>
+          <li>지도를 탭하면 그곳이 내 위치예요. 아래에 "지금 찍으면 → 건물 (확률)"이 떠요.</li>
+          <li>📷 촬영 → 그 건물이 초록색으로 체크되고 위의 n / 12가 늘어요.</li>
+        </ol>
+        <p class="sub">⚙︎ 설정에서 GPS 오차·방향을 바꾸면 판정이 어떻게 달라지는지 볼 수 있어요.</p>
+      </details>
+      <details>
+        <summary><strong>동네 공원에서 현장 테스트</strong> — 정확도 측정</summary>
+        <p class="sub">덕수궁 건물 배치(약 310 × 290 m)를 내 주변으로 옮겨, 가상 건물을 실제 GPS로 찍어 봐요.</p>
+        <ol>
+          <li>넓은 공원에서 "현장에서 시작" → 위치·방향 권한 허용</li>
+          <li>배치에서 멀리 있으면 아래에 "내 주변으로 건물 배치 옮기기" 버튼이 떠요. 누른 뒤 회전으로 공원 모양에 맞추고 "완료". (⚙︎ 설정 → 배치 옮기기·회전으로도 할 수 있어요)</li>
+          <li>⚙︎ 설정 → "테스트 모드" 켜기. 판정과 내 위치 점이 숨겨져요 — 지도 바탕(길·나무·시설)을 보고 가상 건물 앞에 서세요.</li>
+          <li>건물 쪽을 향해 📷 촬영 → "실제로 찍은 건물은?"에서 정답 선택 → 그때 판정이 맞았는지 보여요.</li>
+          <li>위의 n / 12 → 정답률 확인 → "기록 내보내기 (JSON)"로 보관</li>
+        </ol>
+      </details>
+      <details>
+        <summary><strong>실제 덕수궁에서</strong></summary>
+        <ol>
+          <li>배치를 옮겼다면 되돌려요. 덕수궁 근처에서는 아래에 "덕수궁 실제 위치로 되돌리기" 버튼이 떠요. (⚙︎ 설정에도 있어요)</li>
+          <li>나머지는 동네 테스트의 3~5번과 같아요.</li>
+        </ol>
+        <p class="sub">진행률은 0 / 12부터 다시 세요. 이전 기록은 지워지지 않고 내보내기에 모두 들어가요.</p>
+      </details>
+
+      <h3>지도 보는 법</h3>
+      <ul class="legend">
+        <li><span class="swatch" data-swatch="building"></span>건물</li>
+        <li><span class="swatch" data-swatch="zone"></span>촬영 존 — 이 안에서 건물 쪽을 찍으면 그 건물로 판정</li>
+        <li><span class="swatch" data-swatch="visited"></span>체크된 건물</li>
+        <li><span class="swatch" data-swatch="building+candidate"></span>지금 찍으면 체크될 건물</li>
+        <li><span class="swatch round" data-swatch="dot"></span>내 위치 (옅은 원 = GPS 오차, 부채꼴 = 폰이 향한 방향)</li>
+        <li><span class="swatch" data-swatch="boundary"></span>궁 경계</li>
+      </ul>
+
+      <h3>테스트 모드를 켜고 끄면</h3>
+      <ul>
+        <li><strong>끔</strong>: 찍기 전에 판정이 보여요. 촬영 흐름(UX) 확인용이라 정답률에 들어가지 않아요.</li>
+        <li><strong>켬</strong>: 판정을 숨기고, 찍은 뒤 정답을 기록해요. 정답률은 이 촬영만 세요.</li>
+        <li>"방향 반영"은 켜든 끄든 위치만 / 위치+방향 두 판정이 모두 기록돼요. 무엇으로 체크할지만 바뀌어요.</li>
+      </ul>
+
+      <h3>막힐 때</h3>
+      <ul>
+        <li><strong>"…km 떨어져 있어요"</strong>: 배치에서 500 m 넘게 떨어지면 촬영을 기록하지 않아요. 아래 버튼으로 배치를 옮기거나 되돌리세요.</li>
+        <li><strong>"위치가 부정확해요"</strong>: 하늘이 트인 곳에서 잠시 기다리세요. iPhone은 "정확한 위치", Android는 "정확한 위치 사용"을 켜야 해요.</li>
+        <li><strong>권한을 거부했다면</strong>: 브라우저 설정에서 위치·카메라를 허용하고 새로고침하세요.</li>
+        <li><strong>사진과 기록은 이 폰에만</strong> 저장돼요. 테스트가 끝나면 바로 내보내세요.</li>
+      </ul>
+      <button class="primary" value="close">닫기</button>
     </form>
   </dialog>
   <script>

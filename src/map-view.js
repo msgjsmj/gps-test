@@ -11,7 +11,7 @@ const BASE_TILES = {
   options: { maxNativeZoom: 19, maxZoom: 21, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' },
 };
 
-const STYLE = {
+export const STYLE = { // also paints the legend in the help dialog
   boundary: { color: '#8a5a2b', weight: 2, dashArray: '6 6', fill: false, interactive: false },
   zone: { color: '#2b6cb0', weight: 1, dashArray: '4 4', fillColor: '#4299e1', fillOpacity: 0.12, interactive: false },
   building: { color: '#c05621', weight: 2, fillColor: '#ed8936', fillOpacity: 0.25 },

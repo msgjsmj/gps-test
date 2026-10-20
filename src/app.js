@@ -3,7 +3,7 @@
 import { cameraLive, cameraSupported, captureFrame, closeCamera, openCamera } from './camera.js';
 import { dist, normDeg, toGeo, toLocal } from './geo.js';
 import { JUDGE_DEFAULTS, PARAMS_VERSION, judge } from './judge.js';
-import { createMapView } from './map-view.js';
+import { STYLE, createMapView } from './map-view.js';
 import { requestHeadingPermission, watchHeading, watchPosition } from './sensors.js';
 import { exportPayload, isRealPlacement, statsByTest, testContext } from './stats.js';
 import { clearAll, loadPhoto, loadSetting, loadVisits, requestPersistence, savePhoto, saveSetting, saveVisit } from './store.js';
@@ -113,6 +113,26 @@ function placeAt({ lat, lng }, { fit = false } = {}) {
   toast(`${state.area.name} 중심을 옮겼어요 — 다 맞추면 완료`, true);
 }
 
+// The placement bar's "내 위치를 중심으로" and the preview's one-tap action both land here.
+function placeOnMe() {
+  const fix = state.gps.fix;
+  if (!fix || Date.now() - fix.receivedAt > MAX_FIX_AGE) return toast(noFixMessage());
+  if (fix.accuracy > PLACE_MAX_ACCURACY) {
+    view.panTo(toLocal(state.placement, fix), 17);
+    return toast(`위치 오차가 커요(±${Math.round(fix.accuracy)}m) — 지도를 내 위치(파란 점)로 옮겼어요. 내가 선 곳을 탭하거나, 오차가 줄면 다시 누르세요`);
+  }
+  placeAt(fix, { fit: true });
+}
+
+// Settings and the preview's action (offered near the real palace) both land here.
+function resetPlacement() {
+  if (isReal(state.placement)) return toast(`이미 ${state.area.name} 실제 위치예요`);
+  if (!confirm(`건물 배치를 ${state.area.name} 실제 위치로 되돌릴까요? 지금 옮긴 배치는 사라져요.`)) return;
+  setPlacement(realPlacement());
+  view.fit();
+  toast(`${state.area.name} 실제 위치로 되돌렸어요`);
+}
+
 // ---- observation: what the sensors say right now -------------------------
 
 // Raw world values plus their local-frame form, or null without a usable position.
@@ -200,7 +220,7 @@ function previewText(obs, j) {
   // Accuracy first: a ±km fix would otherwise read as "you are far from the layout".
   if (obs.fix.accuracy > POOR_ACCURACY) return poorAccuracy(obs);
   const far = farFromLayout(obs);
-  if (far) return far;
+  if (far) return state.placing ? ['건물 배치를 옮기는 중이에요', '지도를 탭하거나 "내 위치를 중심으로" → 회전으로 맞추고 완료'] : far;
   // Test mode is blind: showing the would-be answer would let the tester walk until it agrees.
   if (state.testMode) return ['촬영 준비됨 · 테스트 모드', [acc, how].filter(Boolean).join(' · ')];
   const { result } = j;
@@ -232,6 +252,8 @@ function sensorParts(obs) {
 // with a coarse or far-off fix (it costs up to ~30 ms on a laptop, several times that on a phone).
 const previewShowsJudgment = (obs) => !state.testMode && obs.fix.accuracy <= POOR_ACCURACY && !farFromLayout(obs);
 
+let previewAction = null; // what the button under the preview does right now (e.g. move the layout here)
+
 function refresh() {
   const obs = observe();
   const j = obs && previewShowsJudgment(obs) ? judgeBoth(obs, { preview: true }) : null;
@@ -239,9 +261,12 @@ function refresh() {
   // would make position-only accuracy circular (the judgment uses that same dot).
   view.setPosition((!state.testMode || state.placing) && obs && { point: obs.point, accuracy: obs.fix.accuracy, heading: obs.localHeading });
   view.render({ visited: visitedIds(), candidateId: state.testMode ? null : j?.result.best, showZones: state.showZones });
-  const [main, sub] = previewText(obs, j);
+  const [main, sub, action] = previewText(obs, j);
   $('#preview-main').textContent = main;
   $('#preview-sub').textContent = sub;
+  previewAction = action?.run ?? null;
+  $('#preview-action').hidden = !action;
+  if (action) $('#preview-action').textContent = action.label;
   $('#sensor-status').textContent = sensorText(obs);
   $('#camera-preview').textContent = sub ? `${main} · ${sub}` : main;
   $('#progress').textContent = `${visitedIds().size} / ${state.buildings.length}`;
@@ -608,15 +633,25 @@ function download(file) {
   setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
 }
 
-// [headline, how to fix] when the tester is nowhere near the layout, else null. Shots there are
-// refused: they would be judged against a layout kilometres away and pollute a real test.
+// [headline, how to fix, one-tap action] when the tester is nowhere near the layout, else null. Shots
+// there are refused: they would be judged against a layout kilometres away and pollute a real test.
 function farFromLayout(obs) {
   const away = dist(obs.point, [0, 0]);
   if (away <= FAR_FROM_LAYOUT) return null;
-  const fix = isReal(state.placement)
-    ? '동네에서 테스트하려면 ⚙︎ 설정 → 배치 옮기기·회전'
-    : '실제 궁이면 ⚙︎ 설정 → 실제 위치로 되돌리기 · 동네면 ⚙︎ 설정 → 배치 옮기기·회전';
-  return [`${isReal(state.placement) ? state.area.name : '옮긴 배치'}에서 ${(away / 1000).toFixed(1)}km 떨어져 있어요`, fix];
+  const headline = `${isReal(state.placement) ? state.area.name : '옮긴 배치'}에서 ${(away / 1000).toFixed(1)}km 떨어져 있어요`;
+  if (state.mode === 'sim') return [headline, '건물 가까이를 탭하세요'];
+  // At the real palace with a park layout still set: offer the way back, not another move.
+  if (!isReal(state.placement) && dist(toLocal(realPlacement(), obs.fix), [0, 0]) <= FAR_FROM_LAYOUT) {
+    return [headline, `지금 ${state.area.name} 근처예요 — 배치를 실제 위치로 되돌리세요`, { label: `${state.area.name} 실제 위치로 되돌리기`, run: resetPlacement }];
+  }
+  const fix = isReal(state.placement) ? '동네에서 테스트하려면 건물 배치를 내 주변으로 옮기세요' : '여기서 테스트하려면 배치를 내 주변으로 다시 옮기세요';
+  return [headline, fix, { label: '내 주변으로 건물 배치 옮기기', run: moveLayoutHere }];
+}
+
+// One tap from "far from the layout" to a usable layout: open the bar and centre it on the tester.
+function moveLayoutHere() {
+  startPlacing();
+  placeOnMe();
 }
 
 // A coarse fix may only look far: then say so (as the preview does) instead of suggesting a
@@ -792,7 +827,18 @@ function renderRecords() {
 
 // ---- wiring -----------------------------------------------------------------
 
+// Legend swatches take the map's own styles, so the help never drifts from what the map draws.
+const rgba = (hex, a) => `rgba(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))}, ${a})`;
+function paintLegend() {
+  for (const el of document.querySelectorAll('[data-swatch]')) {
+    const s = Object.assign({}, ...el.dataset.swatch.split('+').map((k) => STYLE[k]));
+    el.style.border = `${Math.min(s.weight ?? 3, 4)}px ${s.dashArray ? 'dashed' : 'solid'} ${s.color}`;
+    el.style.background = s.fill === false ? 'transparent' : rgba(s.fillColor ?? s.color, s.fillOpacity ?? 0.2); // Leaflet's defaults
+  }
+}
+
 function bindControls() {
+  paintLegend();
   $('#start-gps').addEventListener('click', () => {
     $('#start').hidden = true;
     setMode('gps');
@@ -801,6 +847,8 @@ function bindControls() {
     $('#start').hidden = true;
     setMode('sim');
   });
+  for (const id of ['#start-help', '#open-help']) $(id).addEventListener('click', () => $('#help').showModal());
+  $('#preview-action').addEventListener('click', () => previewAction?.());
   $('#shoot').addEventListener('click', openShutter);
   $('#camera-shutter').addEventListener('click', shutter);
   $('#camera-close').addEventListener('click', closeShutter);
@@ -867,16 +915,13 @@ function bindControls() {
     refresh();
   });
   $('#place-start').addEventListener('click', startPlacing);
-  $('#place-done').addEventListener('click', stopPlacing);
-  $('#place-here').addEventListener('click', () => {
-    const fix = state.gps.fix;
-    if (!fix || Date.now() - fix.receivedAt > MAX_FIX_AGE) return toast(noFixMessage());
-    if (fix.accuracy > PLACE_MAX_ACCURACY) {
-      view.panTo(toLocal(state.placement, fix), 17);
-      return toast(`위치 오차가 커요(±${Math.round(fix.accuracy)}m) — 지도를 내 위치(파란 점)로 옮겼어요. 내가 선 곳을 탭하거나, 오차가 줄면 다시 누르세요`);
-    }
-    placeAt(fix, { fit: true });
+  $('#place-done').addEventListener('click', () => {
+    stopPlacing();
+    // The next step of a field test, which otherwise hides in settings (only once the tester is on the layout).
+    const obs = observe();
+    if (state.mode === 'gps' && !state.testMode && obs && !farFromLayout(obs)) toast('배치 완료 — 정답률을 재려면 ⚙︎ 설정 → 테스트 모드를 켜세요', true);
   });
+  $('#place-here').addEventListener('click', placeOnMe);
   // Dragging the slider redraws at most once per frame and saves when released.
   let rotateFrame = 0;
   $('#rotation').addEventListener('input', (e) => {
@@ -888,13 +933,7 @@ function bindControls() {
     });
   });
   $('#rotation').addEventListener('change', () => saveSetting(placementKey(), state.placement));
-  $('#place-reset').addEventListener('click', () => {
-    if (isReal(state.placement)) return toast(`이미 ${state.area.name} 실제 위치예요`);
-    if (!confirm(`건물 배치를 ${state.area.name} 실제 위치로 되돌릴까요? 지금 옮긴 배치는 사라져요.`)) return;
-    setPlacement(realPlacement());
-    view.fit();
-    toast(`${state.area.name} 실제 위치로 되돌렸어요`);
-  });
+  $('#place-reset').addEventListener('click', resetPlacement);
   $('#test-mode').addEventListener('change', (e) => {
     state.testMode = e.target.checked;
     saveSetting('testMode', state.testMode);
