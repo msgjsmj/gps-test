@@ -142,8 +142,10 @@ export function createMapView(el, { onMapClick, onBuildingClick, onAreaClick, on
             if (open && !f.getTooltip()) f.bindTooltip(f.label, LABEL);
             if (!open) f.unbindTooltip();
           }
-          if (open) s.marker.remove();
-          else if (!areaLayer.hasLayer(s.marker)) s.marker.addTo(areaLayer);
+          // Through the group, not marker.remove(): that leaves the group still claiming the marker, so an
+          // area that closes again (another test, a reset) would never get its "?" back.
+          if (open) areaLayer.removeLayer(s.marker);
+          else if (!areaLayer.hasLayer(s.marker)) areaLayer.addLayer(s.marker);
         }
         if (opening) [...s.zones, ...s.footprints].forEach(pulse);
       }
