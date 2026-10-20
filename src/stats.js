@@ -17,21 +17,22 @@ export function accuracyStats(visits) {
   };
 }
 
-// A test = same mode + same placement. Numbers never mix tests: the park run and
-// the palace run, or simulation and the field, are reported apart. A relocated
-// anchor is rounded to ~10 m so small rotation tweaks don't split a test.
+// A test = same mode + blind or not + same placement. Numbers never mix tests: the
+// park run and the palace run, simulation and the field, or a blind accuracy run and
+// an open UX run are reported apart. A relocated anchor is rounded to ~10 m so small
+// rotation tweaks don't split a test. Only blind tests measure accuracy.
 export const isRealPlacement = (placement, areaAnchor) =>
   placement.anchor.lat === areaAnchor.lat && placement.anchor.lng === areaAnchor.lng && !placement.rotationDeg;
 
-export function testContext(mode, placement, areaAnchor) {
+export function testContext({ mode, placement, blind }, areaAnchor) {
   const where = isRealPlacement(placement, areaAnchor) ? 'real' : `${placement.anchor.lat.toFixed(4)},${placement.anchor.lng.toFixed(4)}`;
-  return `${mode}|${where}`;
+  return `${mode}|${blind ? 'blind' : 'open'}|${where}`;
 }
 
 export function statsByTest(visits, areaAnchor) {
   const groups = new Map();
   for (const v of visits) {
-    const key = testContext(v.mode, v.placement, areaAnchor);
+    const key = testContext(v, areaAnchor);
     groups.set(key, [...(groups.get(key) ?? []), v]);
   }
   return Object.fromEntries([...groups].map(([key, list]) => [key, accuracyStats(list)]));

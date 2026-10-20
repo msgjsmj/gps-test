@@ -6,11 +6,12 @@ const anchor = { lat: 37.5, lng: 127 };
 const real = { anchor, rotationDeg: 0 };
 const park = { anchor: { lat: 37.40001, lng: 127.10001 }, rotationDeg: 30 };
 
-const visit = (truth, positionBest, headingBest, mode = 'gps', placement = real) => ({
+const visit = (truth, positionBest, headingBest, mode = 'gps', placement = real, blind = true) => ({
   id: Math.random().toString(36),
   at: '2026-10-20T00:00:00.000Z',
   mode,
   placement,
+  blind,
   truth,
   judgments: { position: { best: positionBest }, heading: headingBest === undefined ? null : { best: headingBest } },
   photoBytes: 1234,
@@ -32,22 +33,25 @@ test('accuracy counts only labeled shots, compares modes on the same shots, and 
   });
 });
 
-test('a test is mode + placement; rotation tweaks of a relocated layout stay one test', () => {
-  assert.equal(testContext('gps', real, anchor), 'gps|real');
-  assert.equal(testContext('gps', park, anchor), 'gps|37.4000,127.1000');
-  assert.equal(testContext('gps', { ...park, rotationDeg: 35 }, anchor), testContext('gps', park, anchor));
-  assert.notEqual(testContext('sim', real, anchor), testContext('gps', real, anchor));
+test('a test is mode + blind + placement; rotation tweaks of a relocated layout stay one test', () => {
+  const ctx = (mode, placement, blind = true) => testContext({ mode, placement, blind }, anchor);
+  assert.equal(ctx('gps', real), 'gps|blind|real');
+  assert.equal(ctx('gps', park), 'gps|blind|37.4000,127.1000');
+  assert.equal(ctx('gps', { ...park, rotationDeg: 35 }), ctx('gps', park));
+  assert.notEqual(ctx('sim', real), ctx('gps', real));
+  assert.notEqual(ctx('gps', real, false), ctx('gps', real, true)); // UX run vs accuracy run
 });
 
 test('numbers never mix tests (park vs palace, simulation vs field)', () => {
   const s = statsByTest(
-    [visit('A', 'A', 'A'), visit('A', 'B', 'B', 'gps', park), visit('B', 'B', 'B', 'gps', park), visit('A', 'A', 'A', 'sim')],
+    [visit('A', 'A', 'A'), visit('A', 'B', 'B', 'gps', park), visit('B', 'B', 'B', 'gps', park), visit('A', 'A', 'A', 'sim'), visit('A', 'B', 'B', 'gps', real, false)],
     anchor,
   );
-  assert.deepEqual(Object.keys(s).sort(), ['gps|37.4000,127.1000', 'gps|real', 'sim|real']);
-  assert.equal(s['gps|real'].position.correct, 1);
-  assert.equal(s['gps|37.4000,127.1000'].shots, 2);
-  assert.equal(s['gps|37.4000,127.1000'].position.correct, 1);
+  assert.deepEqual(Object.keys(s).sort(), ['gps|blind|37.4000,127.1000', 'gps|blind|real', 'gps|open|real', 'sim|blind|real']);
+  assert.equal(s['gps|blind|real'].position.correct, 1);
+  assert.equal(s['gps|blind|37.4000,127.1000'].shots, 2);
+  assert.equal(s['gps|blind|37.4000,127.1000'].position.correct, 1);
+  assert.equal(s['gps|open|real'].shots, 1);
 });
 
 test('export carries metadata and per-mode stats', () => {
@@ -57,5 +61,5 @@ test('export carries metadata and per-mode stats', () => {
   assert.equal(p.visits[0].photoBytes, 1234);
   assert.equal(p.area.buildings, undefined);
   assert.equal(p.area.declination, -9);
-  assert.equal(p.stats['gps|real'].labeled, 1);
+  assert.equal(p.stats['gps|blind|real'].labeled, 1);
 });

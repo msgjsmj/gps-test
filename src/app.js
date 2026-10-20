@@ -39,6 +39,7 @@ const view = createMapView($('#map'), {
   // In simulation (or while placing) a tap on a building is still a map tap; otherwise it focuses the building.
   onBuildingClick: (id, point) => (state.mode === 'sim' || state.placing ? tapMap(point) : view.focus(id)),
   onLocate() {
+    if (state.testMode) return toast(BLIND_POSITION);
     const obs = observe();
     if (obs) return view.panTo(obs.point);
     if (state.mode === 'sim') return toast('먼저 지도를 탭해서 위치를 정하세요');
@@ -166,7 +167,8 @@ function judgeBoth(obs, { preview = false } = {}) {
 const nameOf = (id) => state.buildings.find((b) => b.id === id)?.name ?? id;
 // Progress, map colours and accuracy cover only the current test: same mode and same
 // placement (a relocated anchor rounded to ~10 m, so small rotation tweaks don't split it).
-const inCurrentTest = (v) => testContext(v.mode, v.placement, state.area.anchor) === testContext(state.mode, state.placement, state.area.anchor);
+const currentTest = () => testContext({ mode: state.mode, placement: state.placement, blind: state.testMode }, state.area.anchor);
+const inCurrentTest = (v) => testContext(v, state.area.anchor) === currentTest();
 const currentVisits = () => state.visits.filter(inCurrentTest);
 // A shot whose truth dialog is still open stays out, so blind test mode leaks nothing behind the dialog.
 const visitedIds = () => new Set(currentVisits().filter((v) => v !== truthTarget).map((v) => v.buildingId).filter(Boolean));
@@ -183,12 +185,13 @@ function previewText(obs, j) {
   const acc = `오차 ±${Math.round(obs.fix.accuracy)}m`;
   // With "use heading" on, say whether it is actually in play — a missing compass silently means position only.
   const how = state.useHeading ? (j.used === 'heading' ? '방향 반영' : '방향 없음 → 위치로 판정') : null;
+  // Accuracy first: a ±km fix would otherwise read as "you are far from the layout".
+  if (obs.fix.accuracy > POOR_ACCURACY) return [`위치가 부정확해요 (${acc})`, '하늘이 트인 곳에서 잠시 기다려 주세요. iPhone은 "정확한 위치"가 켜져 있어야 해요'];
   const away = dist(obs.point, [0, 0]);
   if (away > 500) {
     const fix = isReal(state.placement) ? '동네에서 테스트하려면 ⚙︎ 설정 → 배치 옮기기' : '실제 궁이면 ⚙︎ 설정 → 실제 위치로 되돌리기';
     return [`${isReal(state.placement) ? state.area.name : '옮긴 배치'}에서 ${(away / 1000).toFixed(1)}km 떨어져 있어요`, fix];
   }
-  if (obs.fix.accuracy > POOR_ACCURACY) return [`위치가 부정확해요 (${acc})`, '하늘이 트인 곳에서 잠시 기다려 주세요. iPhone은 "정확한 위치"가 켜져 있어야 해요'];
   // Test mode is blind: showing the would-be answer would let the tester walk until it agrees.
   if (state.testMode) return ['촬영 준비됨 · 테스트 모드', [acc, how].filter(Boolean).join(' · ')];
   const { result } = j;
@@ -219,7 +222,9 @@ function sensorParts(obs) {
 function refresh() {
   const obs = observe();
   const j = obs && judgeBoth(obs, { preview: true });
-  view.setPosition(obs && { point: obs.point, accuracy: obs.fix.accuracy, heading: obs.localHeading });
+  // Blind test mode hides the own-position dot too: standing where the dot sits inside a zone
+  // would make position-only accuracy circular (the judgment uses that same dot).
+  view.setPosition(!state.testMode && obs && { point: obs.point, accuracy: obs.fix.accuracy, heading: obs.localHeading });
   view.render({ visited: visitedIds(), candidateId: state.testMode ? null : j?.result.best, showZones: state.showZones });
   const [main, sub] = previewText(obs, j);
   $('#preview-main').textContent = main;
@@ -246,6 +251,7 @@ setInterval(() => state.mode === 'gps' && scheduleRefresh(), 1000); // ages and 
 
 const GPS_ERRORS = { 1: '위치 권한이 거부됐어요 — 안내대로 허용한 뒤 새로고침해 주세요', 2: '위치를 확인할 수 없어요', 3: '위치 응답이 늦어요 — 계속 시도 중' };
 const POOR_ACCURACY = 50; // meters; beyond this no building can be told apart
+const BLIND_POSITION = '테스트 모드에서는 내 위치를 숨겨요 — 지도 바탕(길·나무·시설)을 보고 서 주세요';
 const PLACE_MAX_ACCURACY = 30; // meters; centering the layout on a worse fix misplaces it
 const LOCATION_HELP = 'iPhone: 설정 → 개인정보 보호 및 보안 → 위치 서비스 → Safari 웹 사이트 → "앱을 사용하는 동안", "정확한 위치" 켬\nAndroid Chrome: 주소창 왼쪽 아이콘 → 권한 → 위치 허용\n그다음 페이지를 새로고침하세요.';
 
@@ -267,7 +273,7 @@ function startGps() {
         state.gps.centered = true;
         const point = toLocal(state.placement, fix);
         const far = dist(point, [0, 0]);
-        if (far < 2000) view.panTo(point); // farther: the preview explains how to fix the placement
+        if (far < 2000 && !state.testMode) view.panTo(point); // farther: the preview explains; blind: don't reveal
       }
       scheduleRefresh();
     },
@@ -397,6 +403,7 @@ async function record(obs, j, photoPromise, photoKind) {
     used: j.used,
     buildingId: j.result.best,
     photoKind,
+    blind: state.testMode, // judgment hidden while aiming: only these shots measure accuracy
   };
   const photo = await photoPromise.catch(() => null);
   visit.photoBytes = photo?.size ?? 0;
@@ -455,7 +462,7 @@ async function flush() {
   }
   if (unsavedCount() && !warnedStorage) {
     warnedStorage = true;
-    toast('기록 저장에 실패했어요 — 다시 시도 중. 꼭 내보내기로 보관하세요');
+    notice('기록 저장에 실패했어요', '다시 시도하는 중이에요. 상태줄의 "미저장 N건"이 0이 될 때까지 기록이 이 화면에만 있어요.\n방문 기록 화면에서 "기록 내보내기"로 꼭 보관하세요.');
   }
   scheduleRefresh();
 }
@@ -535,6 +542,7 @@ function shootSimulated() {
 
 async function openShutter() {
   if (!$('#camera').hidden) return; // already open or opening
+  stopPlacing(); // a stray tap while shooting must not move the layout
   if (state.mode === 'gps') startCompass(); // retry the iOS prompt inside this tap if needed
   if (!cameraSupported()) return shootSimulated();
   const video = $('#camera-video');
@@ -579,6 +587,9 @@ function shutter() {
 let toastTimer;
 function toast(text, ok = false) {
   const el = $('#toast');
+  // An open modal dialog sits in the top layer above any z-index: show the toast inside it.
+  const host = document.querySelector('dialog[open]') ?? document.body;
+  if (el.parentElement !== host) host.append(el);
   el.textContent = text;
   el.className = ok ? 'toast ok' : 'toast';
   el.hidden = false;
@@ -588,17 +599,23 @@ function toast(text, ok = false) {
 
 const ratio = (a, b) => (b ? `${a}/${b} (${Math.round((100 * a) / b)}%)` : '-');
 
-const testLabel = () => `${state.mode === 'gps' ? '현장 GPS' : '시뮬레이션'} · ${isReal(state.placement) ? '실제 위치' : '옮긴 배치'}`;
+const testLabel = () =>
+  `${state.mode === 'gps' ? '현장 GPS' : '시뮬레이션'} · ${isReal(state.placement) ? '실제 위치' : '옮긴 배치'} · ${state.testMode ? '테스트 모드' : 'UX 확인'}`;
 
 function renderStats() {
   const s = accuracyStats(currentVisits());
   const line = (text, strong = false) => Object.assign(document.createElement(strong ? 'strong' : 'p'), { textContent: text });
-  const lines = [line(`이번 테스트(${testLabel()}) 촬영 ${s.shots}장 · 정답 기록 ${s.labeled}장`, true)];
-  if (s.labeled) lines.push(line(`위치만 판정 정답 ${ratio(s.position.correct, s.position.total)}`));
-  if (s.paired.total) lines.push(line(`방향 있는 ${s.paired.total}장 비교: 위치만 ${ratio(s.paired.position, s.paired.total)} · 위치+방향 ${ratio(s.paired.heading, s.paired.total)}`));
-  if (!s.labeled && s.shots) lines.push(line('설정에서 테스트 모드를 켜거나, 아래 로그를 탭해 실제 건물을 기록하면 정답률이 나와요.'));
+  const lines = [line(`이번 테스트(${testLabel()}) 촬영 ${s.shots}장`, true)];
+  if (!state.testMode) {
+    // Open shots saw the would-be answer while aiming, so they never count as accuracy data.
+    lines.push(line('정답률은 테스트 모드(판정을 숨긴 상태)에서 찍은 사진만 세요. 지금은 UX 확인용이에요.'));
+  } else {
+    lines.push(line(`정답 기록 ${s.labeled}장${s.labeled ? ` · 위치만 판정 정답 ${ratio(s.position.correct, s.position.total)}` : ''}`));
+    if (s.paired.total) lines.push(line(`방향 있는 ${s.paired.total}장 비교: 위치만 ${ratio(s.paired.position, s.paired.total)} · 위치+방향 ${ratio(s.paired.heading, s.paired.total)}`));
+    if (!s.labeled && s.shots) lines.push(line('촬영 후 "실제로 찍은 건물은?"에 답하거나, 아래 로그를 탭해 기록하면 정답률이 나와요.'));
+  }
   const others = state.visits.length - s.shots;
-  if (others) lines.push(line(`다른 테스트(모드·배치가 다른) 기록 ${others}장은 여기서 제외 — 내보내기에는 모두 포함`));
+  if (others) lines.push(line(`다른 테스트(모드·배치·테스트 모드가 다른) 기록 ${others}장은 여기서 제외 — 내보내기에는 모두 포함`));
   if (unsavedCount()) lines.push(line(`⚠︎ 아직 저장되지 않은 항목 ${unsavedCount()}건 — 내보내기로 보관하세요`));
   $('#stats').replaceChildren(...lines);
 }
@@ -724,7 +741,7 @@ function bindControls() {
   $('#place-here').addEventListener('click', () => {
     const fix = state.gps.fix;
     if (!fix || Date.now() - fix.receivedAt > MAX_FIX_AGE) return toast(noFixMessage());
-    if (fix.accuracy > PLACE_MAX_ACCURACY) return toast(`위치 오차가 커요(±${Math.round(fix.accuracy)}m) — 정확해지면 다시 눌러 주세요`);
+    if (fix.accuracy > PLACE_MAX_ACCURACY) return toast(`위치 오차가 커요(±${Math.round(fix.accuracy)}m) — 지도에서 내가 선 곳을 직접 탭하세요. iPhone은 "정확한 위치"를 켜 주세요`);
     placeAt(fix, { fit: true });
   });
   // Dragging the slider redraws at most once per frame and saves when released.
