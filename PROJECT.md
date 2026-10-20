@@ -169,7 +169,7 @@ OSM 데이터 갱신: `npm run build:area` (Overpass, 실패 시 미러로 재�
 - 위치 위조 방지는 범위 밖(사용자 동의 전제: 프로토타입).
 - iOS WebKit: IndexedDB에서 읽은 Blob을 다시 저장하면 깨진다(bug 235687) → 사진은 절대 다시 put하지 않는다. 백그라운드에서 IDB 연결이 끊긴다(bug 235579) → 실패 시 연결을 버리고 재시도.
 - Safari는 오래 안 쓴 사이트의 저장 데이터를 지울 수 있다 → 현장 테스트 후 바로 내보내기.
-- 캐시: 앱 모듈이 아예 못 뜨면(캐시 섞임·Leaflet CDN 실패) `index.html`의 인라인 감시 스크립트가 8초 뒤 안내를 띄운다. GitHub Pages는 모든 파일을 10분 캐시한다 → 배포 직후 폰에서 예전 버전이 보이면 새로고침. 로컬은 `python3 -m http.server` 대신 `npm run serve`(no-store) — 일반 서버는 예전 index.html과 새 모듈이 섞여 시작이 멈출 수 있다(실제로 겪음).
+- 캐시 섞임 → **자가 복구**(2026-10-20 실제 장애): GitHub Pages는 파일마다 10분 캐시(`max-age=600`)라 배포 직후 폰이 새 파일과 예전 파일을 섞어 실행할 수 있다. 실제로 새 `index.html`(범례 "닫힌 건물") + 예전 `map-view.js`(`STYLE.locked` 없음) → 범례 칠하기에서 TypeError → "앱을 시작하지 못했어요", **일반 새로고침으로도 안 풀림**(예전 파일이 아직 신선). `index.html`의 인라인 스크립트 `gpsTestSelfHeal()`: 이 페이지가 받은 같은 출처 파일 전부를 `fetch(…, {cache: 'reload'})`로 다시 받아 HTTP 캐시를 갱신하고 한 번 새로고침. 시작 실패 표시(`data-error`, 예전 코드도 남김)·우리 모듈 오류·8초 뒤에도 멈춤이면 실행. 1분 안 두 번째 실패는 진짜 오류로 보고 문구 유지(무한 새로고침 방지, `sessionStorage`). 검증(GitHub Pages식 캐시 서버 재현): 예전 캐시→배포→재방문 3초 안 복구, 다음 배포도 3초 안 복구, 망가진 배포는 1회만 시도, 정상 방문은 새로고침 없음. **Safari 실기기 미확인.** Leaflet CDN 실패는 여전히 8초 뒤 안내. 로컬은 `python3 -m http.server` 대신 `npm run serve`(no-store) — 일반 서버는 예전 index.html과 새 모듈이 섞여 시작이 멈출 수 있다(실제로 겪음).
 
 ## Needs confirmation
 - **실기기 확인 필요**(headless로는 불가): iOS/Android에서 카메라 미리보기·촬영, iOS 방향 권한 팝업, 방향 부채꼴이 실제 카메라 방향과 맞는지(자편각 보정 포함).

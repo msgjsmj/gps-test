@@ -1062,6 +1062,9 @@ async function start() {
 // leaves a visible way out instead of a dead start screen.
 start().catch((e) => {
   console.error(e);
-  $('#start-note').textContent = '앱을 시작하지 못했어요. 새로고침해 주세요. (방금 업데이트됐다면 1~2분 뒤 다시)';
+  // Most often a mix of new and stale cached files right after a deploy: refetch and reload once
+  // (index.html's gpsTestSelfHeal). If that already happened, show the error instead.
+  if (window.gpsTestSelfHeal?.()) return;
+  $('#start-note').textContent = '앱을 시작하지 못했어요. 새로고침해 주세요. 계속되면 잠시 뒤 다시 열어 주세요.';
   $('#start-note').dataset.error = 'true'; // the slow-start watchdog keeps this specific message
 });

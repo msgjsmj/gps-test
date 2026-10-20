@@ -196,15 +196,54 @@
     </form>
   </dialog>
   <script>
-    // Runs even when the app's modules never start (cached old files right after an
-    // update, or the map library failing to load), so the start screen is never a dead end.
-    setTimeout(function () {
-      var button = document.getElementById('start-gps');
-      var note = document.getElementById('start-note');
-      if (!button.disabled || note.dataset.error) return;
-      note.dataset.default = note.textContent;
-      note.textContent = '시작이 늦어지고 있어요. 계속 안 되면 새로고침해 주세요. (방금 업데이트됐다면 1~2분 뒤 다시)';
-    }, 8000);
+    // Plain script: runs even when the app's modules never start, so the start screen is never a dead end.
+    (function () {
+      var HEALED_AT = 'gps-test:healedAt';
+      // GitHub Pages lets a browser cache each file for 10 minutes, so right after a deploy a phone can
+      // run new files mixed with stale ones, which breaks start-up — and a normal reload keeps the stale
+      // ones. Self-heal: fetch every same-origin file this page loaded again past the cache, then reload
+      // once. A second failure within a minute is a real error and stays on screen.
+      window.gpsTestSelfHeal = function () {
+        try {
+          if (Date.now() - Number(sessionStorage.getItem(HEALED_AT) || 0) < 60000) return false;
+          sessionStorage.setItem(HEALED_AT, String(Date.now()));
+        } catch (e) {
+          return false; // no storage, no loop guard: don't risk reloading forever
+        }
+        var own = location.origin + '/';
+        var urls = [location.href].concat(performance.getEntriesByType('resource')
+          .map(function (r) { return r.name; })
+          .filter(function (u) { return u.indexOf(own) === 0; }));
+        document.getElementById('start-note').textContent = '새 버전을 받는 중이에요…';
+        Promise.all(urls.map(function (u) { return fetch(u, { cache: 'reload' }).catch(function () {}); }))
+          .then(function () { location.reload(); });
+        return true;
+      };
+      // A module of ours failing to load or link (e.g. a stale file missing a new export).
+      window.addEventListener('error', function (e) {
+        if (document.getElementById('start-gps').disabled && e.filename && e.filename.indexOf(location.origin + '/') === 0) window.gpsTestSelfHeal();
+      });
+      // Watch the start screen: heal as soon as start-up reports a failure (even stale code marks
+      // #start-note with data-error), or when everything has loaded and it is still stuck at 8 s.
+      var started = Date.now();
+      var watch = setInterval(function () {
+        var button = document.getElementById('start-gps');
+        var note = document.getElementById('start-note');
+        var loaded = document.readyState === 'complete';
+        if (!button.disabled) return clearInterval(watch);
+        if (loaded && note.dataset.error) {
+          clearInterval(watch);
+          window.gpsTestSelfHeal();
+          return;
+        }
+        if (Date.now() - started < 8000) return;
+        clearInterval(watch);
+        if (loaded && window.gpsTestSelfHeal()) return; // everything loaded, yet stuck
+        if (note.dataset.error) return;
+        note.dataset.default = note.textContent;
+        note.textContent = '시작이 늦어지고 있어요. 계속 안 되면 새로고침해 주세요.';
+      }, 500);
+    })();
   </script>
 </body>
 </html>
