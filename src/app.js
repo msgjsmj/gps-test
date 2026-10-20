@@ -5,7 +5,7 @@ import { dist, normDeg, toGeo, toLocal } from './geo.js';
 import { JUDGE_DEFAULTS, PARAMS_VERSION, judge } from './judge.js';
 import { createMapView } from './map-view.js';
 import { requestHeadingPermission, watchHeading, watchPosition } from './sensors.js';
-import { accuracyStats, exportPayload, isRealPlacement, testContext } from './stats.js';
+import { exportPayload, isRealPlacement, statsByTest, testContext } from './stats.js';
 import { clearAll, loadPhoto, loadSetting, loadVisits, requestPersistence, savePhoto, saveSetting, saveVisit } from './store.js';
 import { ZONE_DEFAULTS, withZones } from './zones.js';
 
@@ -512,8 +512,10 @@ async function showTruthPhoto(visit) {
 // The judgment itself stays hidden until a choice is made, so it cannot steer the answer.
 function askTruth(visit) {
   truthTarget = visit;
-  const ranked = new Set([visit.judgments.position, visit.judgments.heading].filter(Boolean).flatMap((j) => j.ranked.map((r) => r.id)));
   const order = state.buildings.map((b) => b.id);
+  // Blind shots list every building in fixed order with nothing marked: highlighting the
+  // nearby candidates would often single out exactly the judged building.
+  const ranked = visit.blind ? new Set() : new Set([visit.judgments.position, visit.judgments.heading].filter(Boolean).flatMap((j) => j.ranked.map((r) => r.id)));
   const candidates = order.filter((id) => ranked.has(id));
   const rest = order.filter((id) => !ranked.has(id));
   const time = new Date(visit.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -637,13 +639,18 @@ function toast(text, ok = false) {
 
 const ratio = (a, b) => (b ? `${a}/${b} (${Math.round((100 * a) / b)}%)` : '-');
 
-const testLabel = () =>
-  `${state.mode === 'gps' ? '현장 GPS' : '시뮬레이션'} · ${isReal(state.placement) ? '실제 위치' : '옮긴 배치'} · ${state.testMode ? '테스트 모드' : 'UX 확인'}`;
+const testLabel = ({ mode, realPlacement, blind }) =>
+  `${mode === 'gps' ? '현장 GPS' : '시뮬레이션'} · ${realPlacement ? '실제 위치' : '옮긴 배치'} · ${blind ? '테스트 모드' : 'UX 확인'}`;
+
+const EMPTY_STATS = { shots: 0, labeled: 0, position: { correct: 0, total: 0 }, paired: { total: 0, position: 0, heading: 0 } };
 
 function renderStats() {
-  const s = accuracyStats(currentVisits());
+  const byTest = statsByTest(state.visits, state.area.anchor);
+  const current = currentTest();
+  const s = byTest[current] ?? EMPTY_STATS;
   const line = (text, strong = false) => Object.assign(document.createElement(strong ? 'strong' : 'p'), { textContent: text });
-  const lines = [line(`이번 테스트(${testLabel()}) 촬영 ${s.shots}장`, true)];
+  const here = { mode: state.mode, realPlacement: isReal(state.placement), blind: state.testMode };
+  const lines = [line(`이번 테스트(${testLabel(here)}) 촬영 ${s.shots}장`, true)];
   if (!state.testMode) {
     // Open shots saw the would-be answer while aiming, so they never count as accuracy data.
     lines.push(line('정답률은 테스트 모드(판정을 숨긴 상태)에서 찍은 사진만 세요. 지금은 UX 확인용이에요.'));
@@ -652,8 +659,15 @@ function renderStats() {
     if (s.paired.total) lines.push(line(`방향 있는 ${s.paired.total}장 비교: 위치만 ${ratio(s.paired.position, s.paired.total)} · 위치+방향 ${ratio(s.paired.heading, s.paired.total)}`));
     if (!s.labeled && s.shots) lines.push(line('촬영 후 "실제로 찍은 건물은?"에 답하거나, 아래 로그를 탭해 기록하면 정답률이 나와요.'));
   }
-  const others = state.visits.length - s.shots;
-  if (others) lines.push(line(`다른 테스트(모드·배치·테스트 모드가 다른) 기록 ${others}장은 여기서 제외 — 내보내기에는 모두 포함`));
+  // Earlier tests (e.g. the park run after resetting to the palace) stay readable here.
+  const others = Object.entries(byTest).filter(([key]) => key !== current);
+  if (others.length) lines.push(line('다른 테스트', true));
+  for (const [, t] of others) {
+    const accuracy = t.blind
+      ? ` · 정답 기록 ${t.labeled}장${t.labeled ? ` · 위치만 ${ratio(t.position.correct, t.position.total)}` : ''}${t.paired.total ? ` · 방향 있는 ${t.paired.total}장: 위치+방향 ${ratio(t.paired.heading, t.paired.total)}` : ''}`
+      : '';
+    lines.push(line(`${testLabel(t)} — 촬영 ${t.shots}장${accuracy}`));
+  }
   if (unsavedCount()) lines.push(line(`⚠︎ 아직 저장되지 않은 항목 ${unsavedCount()}건 — 내보내기로 보관하세요`));
   $('#stats').replaceChildren(...lines);
 }

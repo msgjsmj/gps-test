@@ -35,7 +35,12 @@ export function statsByTest(visits, areaAnchor) {
     const key = testContext(v, areaAnchor);
     groups.set(key, [...(groups.get(key) ?? []), v]);
   }
-  return Object.fromEntries([...groups].map(([key, list]) => [key, accuracyStats(list)]));
+  return Object.fromEntries(
+    [...groups].map(([key, list]) => {
+      const { mode, blind, placement } = list[0];
+      return [key, { mode, blind: !!blind, realPlacement: isRealPlacement(placement, areaAnchor), ...accuracyStats(list) }];
+    }),
+  );
 }
 
 // Visits are metadata only (photos stay on the device), so they export as-is.
