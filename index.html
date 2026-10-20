@@ -125,5 +125,16 @@
       <button class="secondary" value="skip">건너뛰기</button>
     </form>
   </dialog>
+  <script>
+    // Runs even when the app's modules never start (cached old files right after an
+    // update, or the map library failing to load), so the start screen is never a dead end.
+    setTimeout(function () {
+      var button = document.getElementById('start-gps');
+      var note = document.getElementById('start-note');
+      if (!button.disabled) return;
+      note.dataset.default = note.textContent;
+      note.textContent = '시작이 늦어지고 있어요. 계속 안 되면 새로고침해 주세요. (방금 업데이트됐다면 1~2분 뒤 다시)';
+    }, 8000);
+  </script>
 </body>
 </html>

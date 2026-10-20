@@ -5,7 +5,7 @@ import { dist, normDeg, toGeo, toLocal } from './geo.js';
 import { JUDGE_DEFAULTS, PARAMS_VERSION, judge } from './judge.js';
 import { createMapView } from './map-view.js';
 import { requestHeadingPermission, watchHeading, watchPosition } from './sensors.js';
-import { accuracyStats, exportPayload } from './stats.js';
+import { accuracyStats, exportPayload, isRealPlacement, testContext } from './stats.js';
 import { clearAll, loadPhoto, loadSetting, loadVisits, requestPersistence, savePhoto, saveSetting, saveVisit } from './store.js';
 import { ZONE_DEFAULTS, withZones } from './zones.js';
 
@@ -32,6 +32,8 @@ const state = {
   visits: [], // metadata only; photos go straight to storage
 };
 
+let truthTarget = null; // the visit the open truth dialog is about
+
 const view = createMapView($('#map'), {
   onMapClick: tapMap,
   // In simulation (or while placing) a tap on a building is still a map tap; otherwise it focuses the building.
@@ -56,7 +58,7 @@ function tapMap(point) {
 
 const placementKey = () => `placement:${state.area.id}`;
 const realPlacement = () => ({ anchor: { ...state.area.anchor }, rotationDeg: 0 });
-const isReal = (p) => p.anchor.lat === state.area.anchor.lat && p.anchor.lng === state.area.anchor.lng && !p.rotationDeg;
+const isReal = (p) => isRealPlacement(p, state.area.anchor);
 const validPlacement = (p) => Number.isFinite(p?.anchor?.lat) && Number.isFinite(p?.anchor?.lng) && Number.isFinite(p?.rotationDeg);
 
 // The local frame moves with the layout: a simulated point stays at the same spot in the palace.
@@ -74,11 +76,15 @@ function setPlacement(next, { save = true } = {}) {
 }
 
 // Placing happens on the map itself (a bar over it), so the layout stays visible while it moves.
+const fitUnderBar = () => view.fit({ top: state.placing ? $('#place-bar').offsetHeight : 0 });
+
 function startPlacing() {
   $('#settings').close();
   state.placing = true;
   document.body.classList.add('placing');
   $('#place-bar').hidden = false;
+  view.map.doubleClickZoom.disable(); // every tap places; a double tap must not also zoom
+  fitUnderBar();
 }
 
 function stopPlacing() {
@@ -86,12 +92,14 @@ function stopPlacing() {
   state.placing = false;
   document.body.classList.remove('placing');
   $('#place-bar').hidden = true;
+  view.map.doubleClickZoom.enable();
   saveSetting(placementKey(), state.placement);
 }
 
-function placeAt({ lat, lng }) {
+// A tapped spot is already in view; only a jump to the GPS position refits the map.
+function placeAt({ lat, lng }, { fit = false } = {}) {
   setPlacement({ anchor: { lat, lng }, rotationDeg: state.placement.rotationDeg });
-  view.fit();
+  if (fit) fitUnderBar();
   toast(`${state.area.name} 중심을 옮겼어요 — 다 맞추면 완료`, true);
 }
 
@@ -158,10 +166,10 @@ function judgeBoth(obs, { preview = false } = {}) {
 const nameOf = (id) => state.buildings.find((b) => b.id === id)?.name ?? id;
 // Progress, map colours and accuracy cover only the current test: same mode and same
 // placement (a relocated anchor rounded to ~10 m, so small rotation tweaks don't split it).
-const contextOf = (mode, p) => `${mode}|${isReal(p) ? 'real' : `${p.anchor.lat.toFixed(4)},${p.anchor.lng.toFixed(4)}`}`;
-const inCurrentTest = (v) => contextOf(v.mode, v.placement) === contextOf(state.mode, state.placement);
+const inCurrentTest = (v) => testContext(v.mode, v.placement, state.area.anchor) === testContext(state.mode, state.placement, state.area.anchor);
 const currentVisits = () => state.visits.filter(inCurrentTest);
-const visitedIds = () => new Set(currentVisits().map((v) => v.buildingId).filter(Boolean));
+// A shot whose truth dialog is still open stays out, so blind test mode leaks nothing behind the dialog.
+const visitedIds = () => new Set(currentVisits().filter((v) => v !== truthTarget).map((v) => v.buildingId).filter(Boolean));
 const pct = (p) => `${Math.round(p * 100)}%`;
 const secondsAgo = (t) => Math.round((Date.now() - t) / 1000);
 
@@ -175,6 +183,14 @@ function previewText(obs, j) {
   const acc = `오차 ±${Math.round(obs.fix.accuracy)}m`;
   // With "use heading" on, say whether it is actually in play — a missing compass silently means position only.
   const how = state.useHeading ? (j.used === 'heading' ? '방향 반영' : '방향 없음 → 위치로 판정') : null;
+  const away = dist(obs.point, [0, 0]);
+  if (away > 500) {
+    const fix = isReal(state.placement) ? '동네에서 테스트하려면 ⚙︎ 설정 → 배치 옮기기' : '실제 궁이면 ⚙︎ 설정 → 실제 위치로 되돌리기';
+    return [`${isReal(state.placement) ? state.area.name : '옮긴 배치'}에서 ${(away / 1000).toFixed(1)}km 떨어져 있어요`, fix];
+  }
+  if (obs.fix.accuracy > POOR_ACCURACY) return [`위치가 부정확해요 (${acc})`, '하늘이 트인 곳에서 잠시 기다려 주세요. iPhone은 "정확한 위치"가 켜져 있어야 해요'];
+  // Test mode is blind: showing the would-be answer would let the tester walk until it agrees.
+  if (state.testMode) return ['촬영 준비됨 · 테스트 모드', [acc, how].filter(Boolean).join(' · ')];
   const { result } = j;
   if (!result.best) return ['근처에 촬영 대상 건물이 없어요', [acc, how].filter(Boolean).join(' · ')];
   const others = result.ranked.slice(1, 3).map((r) => `${nameOf(r.id)} ${pct(r.p)}`);
@@ -204,7 +220,7 @@ function refresh() {
   const obs = observe();
   const j = obs && judgeBoth(obs, { preview: true });
   view.setPosition(obs && { point: obs.point, accuracy: obs.fix.accuracy, heading: obs.localHeading });
-  view.render({ visited: visitedIds(), candidateId: j?.result.best, showZones: state.showZones });
+  view.render({ visited: visitedIds(), candidateId: state.testMode ? null : j?.result.best, showZones: state.showZones });
   const [main, sub] = previewText(obs, j);
   $('#preview-main').textContent = main;
   $('#preview-sub').textContent = sub;
@@ -228,7 +244,10 @@ setInterval(() => state.mode === 'gps' && scheduleRefresh(), 1000); // ages and 
 
 // ---- sensors ----------------------------------------------------------------
 
-const GPS_ERRORS = { 1: '위치 권한이 거부됐어요 — 브라우저 설정에서 허용해 주세요', 2: '위치를 확인할 수 없어요', 3: '위치 응답이 늦어요 — 계속 시도 중' };
+const GPS_ERRORS = { 1: '위치 권한이 거부됐어요 — 안내대로 허용한 뒤 새로고침해 주세요', 2: '위치를 확인할 수 없어요', 3: '위치 응답이 늦어요 — 계속 시도 중' };
+const POOR_ACCURACY = 50; // meters; beyond this no building can be told apart
+const PLACE_MAX_ACCURACY = 30; // meters; centering the layout on a worse fix misplaces it
+const LOCATION_HELP = 'iPhone: 설정 → 개인정보 보호 및 보안 → 위치 서비스 → Safari 웹 사이트 → "앱을 사용하는 동안", "정확한 위치" 켬\nAndroid Chrome: 주소창 왼쪽 아이콘 → 권한 → 위치 허용\n그다음 페이지를 새로고침하세요.';
 
 function startGps() {
   if (state.gps.stop) return;
@@ -248,8 +267,7 @@ function startGps() {
         state.gps.centered = true;
         const point = toLocal(state.placement, fix);
         const far = dist(point, [0, 0]);
-        if (far < 2000) view.panTo(point);
-        else toast(`${state.area.name}에서 ${(far / 1000).toFixed(1)}km 떨어져 있어요`);
+        if (far < 2000) view.panTo(point); // farther: the preview explains how to fix the placement
       }
       scheduleRefresh();
     },
@@ -259,6 +277,7 @@ function startGps() {
         // denied: the watch is dead; a later tap on ◎ or a mode switch retries
         state.gps.stop?.();
         state.gps.stop = null;
+        notice('위치 권한이 꺼져 있어요', LOCATION_HELP);
       }
       scheduleRefresh();
     },
@@ -384,10 +403,10 @@ async function record(obs, j, photoPromise, photoKind) {
   state.visits.push(visit);
   persist(visit);
   persistPhoto(visit.id, photo);
+  if (state.testMode) return askTruth(visit); // the result shows after the truth is tagged
+  refresh();
   if (visit.buildingId) toast(`✓ ${nameOf(visit.buildingId)} 방문 체크!`, true);
   else toast('근처에 촬영 대상 건물이 없어서 체크하지 않았어요');
-  refresh();
-  if (state.testMode) askTruth(visit);
 }
 
 // ---- persistence and ground truth -------------------------------------------
@@ -450,6 +469,7 @@ const choiceButton = (label, className, onClick) => {
 // Nearby candidates (from either judgment) first, in data order, then every other building.
 // The judgment itself stays hidden until a choice is made, so it cannot steer the answer.
 function askTruth(visit) {
+  truthTarget = visit;
   const ranked = new Set([visit.judgments.position, visit.judgments.heading].filter(Boolean).flatMap((j) => j.ranked.map((r) => r.id)));
   const order = state.buildings.map((b) => b.id);
   const candidates = order.filter((id) => ranked.has(id));
@@ -465,6 +485,8 @@ function askTruth(visit) {
 const truthName = (truth) => (truth === 'none' ? '건물 아님' : nameOf(truth));
 
 function setTruth(visit, truth) {
+  truthTarget = null;
+  refresh();
   visit.truth = truth;
   visit.truthAt = new Date().toISOString();
   $('#truth').close();
@@ -664,6 +686,14 @@ function bindControls() {
     renderRecords();
     $('#records').showModal();
   });
+  $('#truth').addEventListener('close', () => {
+    // Skipped (button or Esc): still tell the tester what was judged.
+    if (!truthTarget) return;
+    const v = truthTarget;
+    truthTarget = null;
+    refresh();
+    toast(`정답 미기록 — 판정은 ${v.buildingId ? nameOf(v.buildingId) : '건물 없음'}`);
+  });
   $('#records').addEventListener('close', () => {
     thumbUrls.forEach((u) => URL.revokeObjectURL(u));
     thumbUrls = [];
@@ -694,7 +724,8 @@ function bindControls() {
   $('#place-here').addEventListener('click', () => {
     const fix = state.gps.fix;
     if (!fix || Date.now() - fix.receivedAt > MAX_FIX_AGE) return toast(noFixMessage());
-    placeAt(fix);
+    if (fix.accuracy > PLACE_MAX_ACCURACY) return toast(`위치 오차가 커요(±${Math.round(fix.accuracy)}m) — 정확해지면 다시 눌러 주세요`);
+    placeAt(fix, { fit: true });
   });
   // Dragging the slider redraws at most once per frame and saves when released.
   let rotateFrame = 0;
@@ -708,6 +739,8 @@ function bindControls() {
   });
   $('#rotation').addEventListener('change', () => saveSetting(placementKey(), state.placement));
   $('#place-reset').addEventListener('click', () => {
+    if (isReal(state.placement)) return toast(`이미 ${state.area.name} 실제 위치예요`);
+    if (!confirm(`건물 배치를 ${state.area.name} 실제 위치로 되돌릴까요? 지금 옮긴 배치는 사라져요.`)) return;
     setPlacement(realPlacement());
     view.fit();
     toast(`${state.area.name} 실제 위치로 되돌렸어요`);
@@ -715,6 +748,7 @@ function bindControls() {
   $('#test-mode').addEventListener('change', (e) => {
     state.testMode = e.target.checked;
     saveSetting('testMode', state.testMode);
+    refresh(); // the preview goes blind (or comes back) right away
   });
   $('#export').addEventListener('click', exportVisits);
   $('#reset').addEventListener('click', () => {
@@ -757,6 +791,8 @@ async function start() {
   setPlacement(validPlacement(saved) ? saved : realPlacement());
   view.fit();
   for (const b of [$('#start-gps'), $('#start-sim')]) b.disabled = false;
+  const note = $('#start-note');
+  if (note.dataset.default) note.textContent = note.dataset.default; // the slow-start watchdog fired, but we made it
 }
 
 // Any start-up failure (e.g. a cached old page mixed with new code right after a deploy)

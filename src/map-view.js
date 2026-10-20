@@ -83,8 +83,9 @@ export function createMapView(el, { onMapClick, onBuildingClick, onLocate }) {
       }
     },
 
-    fit() {
-      if (boundaryShape) map.fitBounds(boundaryShape.getBounds(), { padding: [16, 16] });
+    // top: pixels covered by something over the map (the placement bar).
+    fit({ top = 0 } = {}) {
+      if (boundaryShape) map.fitBounds(boundaryShape.getBounds(), { paddingTopLeft: [16, 16 + top], paddingBottomRight: [16, 16] });
     },
 
     panTo(point, zoom) {
