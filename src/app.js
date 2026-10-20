@@ -195,13 +195,8 @@ function previewText(obs, j) {
   const how = state.useHeading ? (j.used === 'heading' ? '방향 반영' : '방향 없음 → 위치로 판정') : null;
   // Accuracy first: a ±km fix would otherwise read as "you are far from the layout".
   if (obs.fix.accuracy > POOR_ACCURACY) return [`위치가 부정확해요 (${acc})`, '하늘이 트인 곳에서 잠시 기다려 주세요. iPhone은 "정확한 위치"가 켜져 있어야 해요'];
-  const away = dist(obs.point, [0, 0]);
-  if (away > 500) {
-    const fix = isReal(state.placement)
-      ? '동네에서 테스트하려면 ⚙︎ 설정 → 배치 옮기기·회전'
-      : '실제 궁이면 ⚙︎ 설정 → 실제 위치로 되돌리기 · 동네면 ⚙︎ 설정 → 배치 옮기기·회전';
-    return [`${isReal(state.placement) ? state.area.name : '옮긴 배치'}에서 ${(away / 1000).toFixed(1)}km 떨어져 있어요`, fix];
-  }
+  const far = farFromLayout(obs);
+  if (far) return far;
   // Test mode is blind: showing the would-be answer would let the tester walk until it agrees.
   if (state.testMode) return ['촬영 준비됨 · 테스트 모드', [acc, how].filter(Boolean).join(' · ')];
   const { result } = j;
@@ -261,6 +256,7 @@ setInterval(() => state.mode === 'gps' && scheduleRefresh(), 1000); // ages and 
 
 const GPS_ERRORS = { 1: '위치 권한이 거부됐어요 — 안내대로 허용한 뒤 새로고침해 주세요', 2: '위치를 확인할 수 없어요', 3: '위치 응답이 늦어요 — 계속 시도 중' };
 const POOR_ACCURACY = 50; // meters; beyond this no building can be told apart
+const FAR_FROM_LAYOUT = 500; // meters from the layout centre; beyond this nothing is recorded
 const CACHED_FIX_AGE = 120_000; // ms by the fix's own clock; generous for clock skew
 const BLIND_POSITION = '테스트 모드에서는 내 위치를 숨겨요 — 지도 바탕(길·나무·시설)을 보고 서 주세요';
 const PLACE_MAX_ACCURACY = 30; // meters; centering the layout on a worse fix misplaces it
@@ -526,7 +522,7 @@ function askTruth(visit) {
   const candidates = order.filter((id) => ranked.has(id));
   const rest = order.filter((id) => !ranked.has(id));
   const time = new Date(visit.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  $('#truth-judged').textContent = `${time} 촬영 · ${visit.truth ? `기록된 정답: ${truthName(visit.truth)}` : '판정 결과는 고른 뒤에 보여드려요'}`;
+  $('#truth-judged').textContent = `${time} 촬영${aimText(visit)} · ${visit.truth ? `기록된 정답: ${truthName(visit.truth)}` : '판정 결과는 고른 뒤에 보여드려요'}`;
   showTruthPhoto(visit);
   $('#truth-choices').replaceChildren(
     ...[...candidates, ...rest].map((id) => choiceButton(nameOf(id), candidates.includes(id) ? 'candidate' : '', () => setTruth(visit, id))),
@@ -534,6 +530,11 @@ function askTruth(visit) {
   );
   $('#truth').showModal();
 }
+
+// Where the camera pointed (the recorded compass, an input — not the judgment). In a park the
+// photo shows only lawn and trees, so this is the best aid for tagging a shot later.
+const COMPASS = ['북', '북동', '동', '남동', '남', '남서', '서', '북서'];
+const aimText = (v) => (v.heading && v.heading.source !== 'sim' ? ` · ${Math.round(v.heading.value)}°(${COMPASS[Math.round(v.heading.value / 45) % 8]}) 방향` : '');
 
 const truthName = (truth) => (truth === 'none' ? '건물 아님' : nameOf(truth));
 
@@ -578,11 +579,29 @@ function download(file) {
   setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
 }
 
+// [headline, how to fix] when the tester is nowhere near the layout, else null. Shots there are
+// refused: they would be judged against a layout kilometres away and pollute a real test.
+function farFromLayout(obs) {
+  const away = dist(obs.point, [0, 0]);
+  if (away <= FAR_FROM_LAYOUT) return null;
+  const fix = isReal(state.placement)
+    ? '동네에서 테스트하려면 ⚙︎ 설정 → 배치 옮기기·회전'
+    : '실제 궁이면 ⚙︎ 설정 → 실제 위치로 되돌리기 · 동네면 ⚙︎ 설정 → 배치 옮기기·회전';
+  return [`${isReal(state.placement) ? state.area.name : '옮긴 배치'}에서 ${(away / 1000).toFixed(1)}km 떨어져 있어요`, fix];
+}
+
+const refuseFar = (obs) => {
+  const far = obs && farFromLayout(obs);
+  if (far) toast(`기록하지 않았어요 — ${far[0]}. ${far[1]}`);
+  return !!far;
+};
+
 const noFixMessage = () => (state.mode === 'sim' ? '먼저 지도를 탭해서 위치를 정하세요' : state.gps.error ?? '아직 위치를 못 잡았어요');
 
 function shootSimulated() {
   const obs = observe();
   if (!obs) return toast(noFixMessage());
+  if (refuseFar(obs)) return;
   record(obs, judgeBoth(obs), simulatedPhoto(obs), 'simulated');
 }
 
@@ -590,6 +609,7 @@ async function openShutter() {
   if (!$('#camera').hidden) return; // already open or opening
   stopPlacing(); // a stray tap while shooting must not move the layout
   if (state.mode === 'gps') startCompass(); // retry the iOS prompt inside this tap if needed
+  if (refuseFar(observe())) return; // don't even open the camera
   if (!cameraSupported()) return shootSimulated();
   const video = $('#camera-video');
   $('#camera-shutter').disabled = true; // enabled once frames flow
@@ -622,6 +642,7 @@ function shutter() {
   if (button.disabled || !cameraLive(video)) return;
   const obs = observe();
   if (!obs) return toast(noFixMessage());
+  if (refuseFar(obs)) return closeShutter();
   const photo = captureFrame(video); // grab the frame first, then judge
   button.disabled = true;
   const j = judgeBoth(obs);
@@ -671,7 +692,7 @@ function renderStats() {
   if (others.length) lines.push(line('다른 테스트', true));
   for (const [, t] of others) {
     const accuracy = t.blind
-      ? ` · 정답 기록 ${t.labeled}장${t.labeled ? ` · 위치만 ${ratio(t.position.correct, t.position.total)}` : ''}${t.paired.total ? ` · 방향 있는 ${t.paired.total}장: 위치+방향 ${ratio(t.paired.heading, t.paired.total)}` : ''}`
+      ? ` · 정답 기록 ${t.labeled}장${t.labeled ? ` · 위치만 ${ratio(t.position.correct, t.position.total)}` : ''}${t.paired.total ? ` · 방향 있는 ${t.paired.total}장: 위치만 ${ratio(t.paired.position, t.paired.total)} · 위치+방향 ${ratio(t.paired.heading, t.paired.total)}` : ''}`
       : '';
     const since = new Date(t.firstAt).toLocaleString([], { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
     lines.push(line(`${testLabel(t)} (${since}부터) — 촬영 ${t.shots}장${accuracy}`));
@@ -689,7 +710,7 @@ function renderShotLog() {
       const time = new Date(v.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       const b = choiceButton('', '', () => askTruth(v));
       const tag = inCurrentTest(v) ? '' : `[다른 테스트${v.mode === 'sim' ? '·시뮬' : ''}] `;
-      b.append(`${time} · ${tag}${judged} · ±${Math.round(v.fix.accuracy)}m${v.used === 'heading' ? ' · 방향' : ''} · `);
+      b.append(`${time}${aimText(v)} · ${tag}${judged} · ±${Math.round(v.fix.accuracy)}m${v.used === 'heading' ? ' · 방향' : ''} · `);
       const right = v.truth && (v.buildingId ?? 'none') === v.truth;
       b.append(v.truth ? Object.assign(document.createElement('span'), { className: right ? 'ok' : 'ng', textContent: `정답 ${truthName(v.truth)} ${right ? '✓' : '✗'}` }) : '정답 미기록');
       const li = document.createElement('li');
@@ -775,6 +796,9 @@ function bindControls() {
     truthTarget = null;
     refresh();
     if (v.truth) return toast(`정답은 그대로예요: ${truthName(v.truth)}`);
+    if (v.blind && !isRealPlacement(v.placement, state.area.anchor)) {
+      return toast('정답 미기록 — 옮긴 배치(가상 건물)는 사진으로 구분하기 어려워요. 되도록 바로 기록하세요(나중엔 로그에서)');
+    }
     if (v.blind) return toast('정답 미기록 — 방문 기록 화면의 로그에서 나중에 기록할 수 있어요');
     toast(`정답 미기록 — 판정은 ${v.buildingId ? nameOf(v.buildingId) : '건물 없음'}`);
   });
