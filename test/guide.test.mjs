@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
-import { buildAreas } from '../src/areas.js';
 
 const read = (name) => JSON.parse(readFileSync(new URL(`../data/${name}`, import.meta.url)));
 const area = read('deoksugung.json');
@@ -16,12 +15,12 @@ test('every building opens a description with text', () => {
   }
 });
 
-test('every area has a credited photo that exists', () => {
-  const photos = read('place-photos.json');
-  for (const a of buildAreas(guide.places, guide.buildingPlace, area.buildings)) {
-    const photo = photos[a.key];
-    assert.ok(photo, `${a.key} has no photo`);
+test('every building has a credited photo that exists', () => {
+  const photos = read('building-photos.json');
+  for (const b of area.buildings) {
+    const photo = photos[b.id];
+    assert.ok(photo, `${b.id} has no photo`);
     assert.ok(existsSync(new URL(`../${photo.file}`, import.meta.url)), `${photo.file} is missing`);
-    assert.ok(photo.author && photo.license && photo.page, `${a.key} lacks its credit`);
+    assert.ok(photo.author && photo.license && photo.page, `${b.id} lacks its credit`);
   }
 });

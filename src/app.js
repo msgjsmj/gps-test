@@ -22,7 +22,7 @@ const state = {
   buildings: [],
   guide: null, // place descriptions + which place each building opens (data/deoksugung-guide.json)
   areas: [], // what a visitor unlocks: one per place with buildings here
-  photos: {}, // place key → { file, author, license, licenseUrl, page }
+  photos: {}, // building id → { file, author, license, licenseUrl, page } (data/building-photos.json)
   placement: null,
   mode: 'sim',
   sim: { point: null, accuracy: 10 }, // no heading: simulation judges by position only
@@ -41,7 +41,7 @@ const view = createMapView($('#map'), {
   onMapClick: tapMap,
   // A building or "?": while placing it is just a spot on the map; in simulation it steps into that
   // area; in the field it opens the area's card once the area is open.
-  onBuildingClick: (id, point) => tapShape(state.guide.buildingPlace[id], point),
+  onBuildingClick: (id, point) => tapShape(state.guide.buildingPlace[id], point, id),
   onAreaClick: (key, point) => tapShape(key, point),
   onLocate() {
     const obs = observe();
@@ -59,10 +59,10 @@ function tapMap(point) {
   refresh();
 }
 
-function tapShape(key, point) {
+function tapShape(key, point, buildingId) {
   if (state.placing || !key) return tapMap(point);
   if (state.mode === 'sim') return stepInto(key);
-  if (openedKeys().has(key)) return showCard(key);
+  if (openedKeys().has(key)) return showCard(key, { first: buildingId });
   toast('아직 안 가 본 곳이에요 — 가까이 가서 건물 쪽을 바라보면 열려요');
 }
 
@@ -230,7 +230,7 @@ const secondsAgo = (t) => Math.round((Date.now() - t) / 1000);
 const ageNote = (fix) => (Date.now() - fix.receivedAt > WARN_FIX_AGE ? ` (${secondsAgo(fix.receivedAt)}초 전)` : '');
 
 // [headline, details, one-tap action?] for the sheet under the map.
-function sheetText(obs, current, aimed, opened) {
+function sheetText(obs, current, aimed, opened, here) {
   if (!obs) {
     if (state.mode === 'sim') return ['지도를 탭해서 내 위치를 정하세요', ''];
     if (state.gps.fix) return [`위치 신호가 끊겼어요 (${secondsAgo(state.gps.fix.receivedAt)}초 전)`, '하늘이 트인 곳에서 잠시 기다리거나 ◎를 눌러 다시 요청하세요'];
@@ -245,7 +245,7 @@ function sheetText(obs, current, aimed, opened) {
   // Without a compass nothing speeds the opening up: say so, since it is invisible otherwise.
   const compass = state.mode === 'gps' && obs.localHeading !== null;
   const info = [`오차 ±${Math.round(obs.fix.accuracy)}m${ageNote(obs.fix)}`, state.mode === 'gps' && !compass && '나침반 없음'].filter(Boolean).join(' · ');
-  if (current && opened.has(current)) return [`지금 여기: ${areaOf(current).name}`, info, { label: '설명 보기', run: () => showCard(current) }];
+  if (current && opened.has(current)) return [`지금 여기: ${areaOf(current).name}`, info, { label: '설명 보기', run: () => showCard(current, { first: here }) }];
   const wait = current && `${Math.max(1, Math.ceil(dwell.remaining() / 1000))}초 뒤 열려요`;
   if (current && aimed) return ['? 새로운 곳이에요 — 방향도 맞아요', `${wait} · ${info}`];
   if (current) return ['? 새로운 곳이에요 — 잠시 그대로 있어 주세요', [wait, compass && '건물 쪽을 보면 더 빨리', info].filter(Boolean).join(' · ')];
@@ -289,7 +289,7 @@ function refresh() {
   const opened = openedKeys();
   view.setPosition(obs && { point: obs.point, accuracy: obs.fix.accuracy, heading: obs.localHeading });
   view.render({ opened, current, animateKey: quietRender ? null : currentTest() }); // pulses only within one test
-  const [main, sub, action] = sheetText(obs, current, aimed, opened);
+  const [main, sub, action] = sheetText(obs, current, aimed, opened, j?.position.best);
   $('#preview-main').textContent = main;
   $('#preview-sub').textContent = sub;
   previewAction = action?.run ?? null;
@@ -491,16 +491,16 @@ function openArea(key, obs, p, aimed) {
   // Never cover what the visitor is reading or doing: the card follows as soon as that closes.
   if ($('#records').open) renderRecords(); // the list shows it at once (tapping it opens the card)
   if (document.querySelector('dialog[open]')) {
-    pendingCards.push(key);
+    pendingCards.push({ key, first: record.buildingId });
     return toast(`🔓 ${areaOf(key).name} 열렸어요 — 이 화면을 닫으면 설명이 떠요`, true);
   }
-  showCard(key, { fresh: true });
+  showCard(key, { fresh: true, first: record.buildingId });
 }
 
-// Areas that opened while a dialog was up, oldest first. Each still gets its first, automatic card.
+// Areas that opened while a dialog was up ({ key, first }), oldest first. Each still gets its first, automatic card.
 const pendingCards = [];
 function showPendingCard() {
-  if (pendingCards.length && !document.querySelector('dialog[open]')) showCard(pendingCards.shift(), { fresh: true });
+  if (pendingCards.length && !document.querySelector('dialog[open]')) showCard(pendingCards[0].key, { fresh: true, first: pendingCards[0].first });
 }
 
 // ---- persistence ---------------------------------------------------------------
@@ -628,21 +628,38 @@ const noFixMessage = () => (state.mode === 'sim' ? '먼저 지도를 탭해서 �
 
 const paragraph = (text) => Object.assign(document.createElement('p'), { textContent: text });
 
-// Photo with its credit, summary, then the full text and footnotes folded away — as on the web guide.
-function showCard(key, { fresh = false } = {}) {
-  const { place } = areaOf(key);
-  const waiting = pendingCards.indexOf(key);
-  if (waiting >= 0) pendingCards.splice(waiting, 1); // opened by hand first (e.g. from the records)
-  fresh ||= waiting >= 0;
-  const photo = state.photos[key];
-  $('#card-figure').hidden = !photo;
-  if (photo) {
-    $('#card-photo').src = photo.file;
-    $('#card-photo').alt = `${place.name} 사진`;
-    // CC attribution: author (linked to the source page) and license (linked to its text).
-    const link = (href, textContent) => Object.assign(document.createElement('a'), { href, textContent, target: '_blank', rel: 'noopener' });
-    $('#card-credit').replaceChildren('사진: ', link(photo.page, photo.author), ' · ', photo.licenseUrl ? link(photo.licenseUrl, photo.license) : photo.license, ' · 위키미디어 공용');
+// One photo per building of the area, named, swiped sideways; `first` (the building the visitor
+// stands at) leads. Each carries its own credit — CC attribution: author (linked to the source page)
+// and license (linked to its text).
+function photoSlide(id, index, count) {
+  const photo = state.photos[id];
+  const name = state.buildings.find((b) => b.id === id).name;
+  const link = (href, textContent) => Object.assign(document.createElement('a'), { href, textContent, target: '_blank', rel: 'noopener' });
+  const shot = Object.assign(document.createElement('div'), { className: 'card-shot' });
+  shot.append(
+    Object.assign(document.createElement('img'), { src: photo.file, alt: `${name} 사진`, loading: index ? 'lazy' : 'eager' }),
+    Object.assign(document.createElement('span'), { className: 'card-shot-name', textContent: count > 1 ? `${name} · ${index + 1}/${count}` : name }),
+  );
+  const credit = Object.assign(document.createElement('figcaption'), { className: 'credit' });
+  credit.append('사진: ', link(photo.page, photo.author), ' · ', photo.licenseUrl ? link(photo.licenseUrl, photo.license) : photo.license, ' · 위키미디어 공용');
+  const slide = Object.assign(document.createElement('figure'), { className: 'card-slide' });
+  slide.append(shot, credit);
+  return slide;
+}
+
+// Photos, summary, then the full text and footnotes folded away — as on the web guide.
+function showCard(key, { fresh = false, first = null } = {}) {
+  const { place, buildingIds } = areaOf(key);
+  const waiting = pendingCards.findIndex((c) => c.key === key);
+  if (waiting >= 0) {
+    first ??= pendingCards[waiting].first;
+    pendingCards.splice(waiting, 1); // shown now (possibly opened by hand first, e.g. from the records)
   }
+  fresh ||= waiting >= 0;
+  const ids = (buildingIds.includes(first) ? [first, ...buildingIds.filter((id) => id !== first)] : buildingIds).filter((id) => state.photos[id]);
+  $('#card-photos').replaceChildren(...ids.map((id, i) => photoSlide(id, i, ids.length)));
+  $('#card-photos').hidden = !ids.length;
+  $('#card-photos').scrollLeft = 0;
   $('#card-fresh').hidden = !fresh;
   $('#card-name').textContent = place.name;
   $('#card-summary').textContent = place.summary;
@@ -700,20 +717,22 @@ function renderStats() {
 
 function renderRecords() {
   renderStats();
-  const firstOpen = new Map();
-  for (const v of currentOpenings()) if (!firstOpen.has(v.placeId)) firstOpen.set(v.placeId, v.at);
+  const firstOpen = new Map(); // place → its first opening in this test
+  for (const v of currentOpenings()) if (!firstOpen.has(v.placeId)) firstOpen.set(v.placeId, v);
   $('#record-list').replaceChildren(
     ...state.areas.map((a) => {
-      const at = firstOpen.get(a.key);
+      const opening = firstOpen.get(a.key);
+      const at = opening?.at;
+      const lead = a.buildingIds.includes(opening?.buildingId) ? opening.buildingId : a.buildingIds[0];
       const li = Object.assign(document.createElement('li'), { className: at ? 'done' : 'locked' });
       const mark = Object.assign(document.createElement('span'), { className: 'mark', textContent: at ? '✓' : '?' });
       const time = at && new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       const name = Object.assign(document.createElement('button'), { type: 'button', textContent: at ? `${a.name} · ${time}` : '아직 안 가 본 곳', disabled: !at });
       name.addEventListener('click', () => {
         $('#records').close();
-        showCard(a.key);
+        showCard(a.key, { first: lead });
       });
-      const thumb = at && state.photos[a.key] ? Object.assign(document.createElement('img'), { src: state.photos[a.key].file, alt: '' }) : document.createElement('span');
+      const thumb = at && state.photos[lead] ? Object.assign(document.createElement('img'), { src: state.photos[lead].file, alt: '' }) : document.createElement('span');
       li.append(mark, name, thumb);
       return li;
     }),
@@ -822,7 +841,7 @@ async function start() {
     $('#start-note').dataset.error = 'true'; // the slow-start watchdog keeps this specific message
     return;
   }
-  state.photos = await fetchJson('data/place-photos.json').catch(() => ({})); // cards work without photos
+  state.photos = await fetchJson('data/building-photos.json').catch(() => ({})); // cards work without photos
   state.area = area;
   state.areaHash = hashText(JSON.stringify(area.buildings));
   state.buildings = withZones(area.buildings);

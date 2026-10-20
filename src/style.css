@@ -262,9 +262,32 @@ dialog h3 { margin: 4px 0 0; font-size: 15px; }
 /* The place card: photo, summary, then the full text folded away (as on the web guide). */
 .card { width: min(520px, calc(100vw - 24px)); }
 .card form { gap: 10px; }
-.card-figure { margin: -16px -16px 0; }
-.card-figure[hidden] { display: none; }
-.card-figure img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--radius) var(--radius) 0 0; background: var(--line); }
+/* One photo per building of the area, swiped sideways (snaps to each); its name and n/total on the photo. */
+.card-photos {
+  display: flex;
+  margin: -16px -16px 0;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.card-photos::-webkit-scrollbar { display: none; }
+.card-photos[hidden] { display: none; }
+.card-slide { flex: 0 0 100%; margin: 0; scroll-snap-align: start; }
+.card-shot { position: relative; }
+.card-shot img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: var(--line); }
+.card-shot-name {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, .62);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+}
 .credit { padding: 4px 16px 0; font-size: 11px; color: var(--muted); }
 .credit a { color: inherit; }
 .card-fresh { justify-self: start; margin: 0; padding: 2px 8px; border-radius: 999px; background: #c6f6d5; color: var(--ok); font-size: 13px; font-weight: 700; }

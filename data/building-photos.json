@@ -1,0 +1,108 @@
+{
+ "daehanmun": {
+  "file": "assets/buildings/daehanmun.jpg",
+  "author": "Richard Mortel from Riyadh, Saudi Arabia",
+  "license": "CC BY 2.0",
+  "licenseUrl": "https://creativecommons.org/licenses/by/2.0",
+  "page": "https://commons.wikimedia.org/wiki/File:Deoksugung_Palace,_Seoul_(24)_(27243368068).jpg",
+  "title": "File:Deoksugung Palace, Seoul (24) (27243368068).jpg"
+ },
+ "gwangmyeongmun": {
+  "file": "assets/buildings/gwangmyeongmun.jpg",
+  "author": "Mobius6",
+  "license": "CC BY 4.0",
+  "licenseUrl": "https://creativecommons.org/licenses/by/4.0",
+  "page": "https://commons.wikimedia.org/wiki/File:Deoksugung_Palace_20240409_001.jpg",
+  "title": "File:Deoksugung Palace 20240409 001.jpg"
+ },
+ "junghwamun": {
+  "file": "assets/buildings/junghwamun.jpg",
+  "author": "Richard Mortel from Riyadh, Saudi Arabia",
+  "license": "CC BY 2.0",
+  "licenseUrl": "https://creativecommons.org/licenses/by/2.0",
+  "page": "https://commons.wikimedia.org/wiki/File:Deoksugung_Palace,_Seoul_(59)_(40221098465).jpg",
+  "title": "File:Deoksugung Palace, Seoul (59) (40221098465).jpg"
+ },
+ "junghwajeon": {
+  "file": "assets/buildings/junghwajeon.jpg",
+  "author": "Mannaa mohamed",
+  "license": "CC BY-SA 4.0",
+  "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+  "page": "https://commons.wikimedia.org/wiki/File:Deoksugung_Palace_2.jpg",
+  "title": "File:Deoksugung Palace 2.jpg"
+ },
+ "seogeodang": {
+  "file": "assets/buildings/seogeodang.jpg",
+  "author": "Kimhs5400(블루시티)",
+  "license": "CC BY-SA 4.0",
+  "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0",
+  "page": "https://commons.wikimedia.org/wiki/File:Seogeodang.jpg",
+  "title": "File:Seogeodang.jpg"
+ },
+ "jeukjodang": {
+  "file": "assets/buildings/jeukjodang.jpg",
+  "author": "문화재청",
+  "license": "KOGL Type 1",
+  "licenseUrl": "http://www.kogl.or.kr/info/licenseType1.do",
+  "page": "https://commons.wikimedia.org/wiki/File:%EB%8D%95%EC%88%98%EA%B6%81_%EC%A6%89%EC%A1%B0%EB%8B%B9.jpg",
+  "title": "File:덕수궁 즉조당.jpg",
+  "note": "Commons files this under Junmyeongdang (inherited from the pair photo it was cut from), but it is 즉조당: the corridor passage at its left edge, 석어당's roof at its right edge and the glass tower behind match the eastern building of '덕수궁 즉조당과 준명당.jpg' (준명당 is west of 즉조당)."
+ },
+ "junmyeongdang": {
+  "file": "assets/buildings/junmyeongdang.jpg",
+  "author": "User:Gapo",
+  "license": "CC BY-SA 3.0",
+  "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0",
+  "page": "https://commons.wikimedia.org/wiki/File:JunMyong_dang.JPG",
+  "title": "File:JunMyong dang.JPG"
+ },
+ "deokhongjeon": {
+  "file": "assets/buildings/deokhongjeon.jpg",
+  "author": "Mobius6",
+  "license": "CC BY 4.0",
+  "licenseUrl": "https://creativecommons.org/licenses/by/4.0",
+  "page": "https://commons.wikimedia.org/wiki/File:Deoksugung_Palace_20240409_089.jpg",
+  "title": "File:Deoksugung Palace 20240409 089.jpg"
+ },
+ "hamnyeongjeon": {
+  "file": "assets/buildings/hamnyeongjeon.jpg",
+  "author": "Mobius6",
+  "license": "CC BY 4.0",
+  "licenseUrl": "https://creativecommons.org/licenses/by/4.0",
+  "page": "https://commons.wikimedia.org/wiki/File:Deoksugung_Palace_20240409_004.jpg",
+  "title": "File:Deoksugung Palace 20240409 004.jpg"
+ },
+ "jeonggwanheon": {
+  "file": "assets/buildings/jeonggwanheon.jpg",
+  "author": "Striker9498",
+  "license": "CC0",
+  "licenseUrl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+  "page": "https://commons.wikimedia.org/wiki/File:20260509_%EB%8D%95%EC%88%98%EA%B6%81_%EC%A0%95%EA%B4%80%ED%97%8C.jpg",
+  "title": "File:20260509 덕수궁 정관헌.jpg"
+ },
+ "seokjojeon": {
+  "file": "assets/buildings/seokjojeon.jpg",
+  "author": "Mobius6",
+  "license": "CC BY 4.0",
+  "licenseUrl": "https://creativecommons.org/licenses/by/4.0",
+  "page": "https://commons.wikimedia.org/wiki/File:Seokjojeon_20240409_081.jpg",
+  "title": "File:Seokjojeon 20240409 081.jpg"
+ },
+ "dondeokjeon": {
+  "file": "assets/buildings/dondeokjeon.jpg",
+  "author": "Striker9498",
+  "license": "CC0",
+  "licenseUrl": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+  "page": "https://commons.wikimedia.org/wiki/File:20260509_%EB%8D%95%EC%88%98%EA%B6%81_%EB%8F%88%EB%8D%95%EC%A0%84.jpg",
+  "title": "File:20260509 덕수궁 돈덕전.jpg"
+ },
+ "junghwajeon-haenggak": {
+  "file": "assets/buildings/junghwajeon-haenggak.jpg",
+  "author": "Huntsmanleader",
+  "license": "CC BY 4.0",
+  "licenseUrl": "https://creativecommons.org/licenses/by/4.0",
+  "page": "https://commons.wikimedia.org/wiki/File:Changgyeonggung_2023-11-02.jpg",
+  "title": "File:Changgyeonggung 2023-11-02.jpg",
+  "note": "Commons titles this Changgyeonggung, but its GPS (37.565685, 126.974852) is Deoksugung's Junghwajeon terrace; the small red-walled corner building mid-frame is the haenggak. The credit shows author and license only."
+ }
+}
