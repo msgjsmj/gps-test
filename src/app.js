@@ -39,7 +39,11 @@ const view = createMapView($('#map'), {
   // In simulation (or while placing) a tap on a building is still a map tap; otherwise it focuses the building.
   onBuildingClick: (id, point) => (state.mode === 'sim' || state.placing ? tapMap(point) : view.focus(id)),
   onLocate() {
-    if (state.testMode && !state.placing) return toast(BLIND_POSITION); // placing is setup, not a judgment
+    if (state.testMode && !state.placing) {
+      // placing is setup, not a judgment; still retry a dead GPS watch (e.g. after a denial)
+      if (state.mode === 'gps' && !state.gps.stop) startGps();
+      return toast(state.gps.error ?? BLIND_POSITION);
+    }
     const obs = observe();
     if (obs) return view.panTo(obs.point);
     if (state.mode === 'sim') return toast('먼저 지도를 탭해서 위치를 정하세요');
@@ -892,8 +896,10 @@ async function start() {
   state.testMode = loadSetting('testMode', false);
   $('#test-mode').checked = state.testMode;
   // Storage must never block the app: shots taken before this resolves are merged in.
+  const loadedFor = resetGeneration;
   loadVisits()
     .then((loaded) => {
+      if (loadedFor !== resetGeneration) return; // reset while loading: the old visits are gone
       const fresh = new Set(state.visits.map((v) => v.id));
       state.visits = [...loaded.filter((v) => !fresh.has(v.id)), ...state.visits];
       refresh();
