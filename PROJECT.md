@@ -31,7 +31,7 @@
 
 ## 바로 쓰기 — https://msgjsmj.github.io/gps-test/
 
-폰(iOS Safari / Android Chrome)에서 위 주소를 연다. 코드: https://github.com/msgjsmj/gps-test (공개).
+폰(iOS Safari / Android Chrome)에서 위 주소를 연다. 코드: https://github.com/msgjsmj/gps-test (공개). **`main`은 보호돼 있다 — 모든 변경은 PR로 올려 머지한다**(직접 푸시 불가, 아래 "변경 올리기").
 
 **사용법의 단일 출처 = 앱 안 `?` 사용법** (`index.html`의 `#help`, 시작 화면의 "사용법 보기"로도 열림). 시뮬레이션 / 동네 공원 / 실제 덕수궁 세 흐름, 열리는 조건, 지도 범례, 막힐 때를 담는다. 사용 순서를 바꾸면 거기를 고치고, 여기에는 그 흐름을 떠받치는 규칙(설계 결정)만 둔다.
 - **열리는 규칙** (`src/areas.js`, `AREA_DEFAULTS`, `app.js`의 `locate`): **위치만 판정**의 건물별 확률을 구역별로 더해(`leadingArea`) 가장 큰 구역이 **p ≥ 0.3**이면 "지금 그 구역 안". 같은 구역이 끊김 없이 이어지는 동안 시계가 흐르고 **3초**가 차면 열린다(`createDwell` — GPS가 구역 경계에서 흔들려 열리는 것 방지). **위치+방향 판정**이 같은 구역을 p ≥ 0.5로 가리키면(= 폰이 그 건물을 향함, `aimed`) 시계가 **2배**로 흘러 1.5초. 도중에 방향이 맞기 시작해도 남은 시간만 빨라진다. 시뮬레이션·나침반 없음은 늘 3초.
@@ -66,7 +66,7 @@
   - 저장: IndexedDB v2 — `visits`(메타데이터)와 `photos`(촬영 때 한 번만 기록) 분리. 실패한 쓰기는 큐에 남아 다음 쓰기·화면 복귀 때 재시도, 상태줄에 "미저장 N건".
   - 내보내기: JSON(`gps-test-visits/2`, 사진 제외). `stats`는 테스트(`testContext` = 모드 + 배치)별로 나뉜다 — 앱 화면과 같은 기준. 폰은 공유 시트, 안 되면 다운로드.
   - 검증(headless): 촬영→정답→새로고침 후 복원→정답 재기록(썸네일 정상)→시뮬 분리 집계, IndexedDB 쓰기 강제 실패 → "미저장 2건" → 복구 후 재시도 → DB에 visits 2·photos 2, 에러 0.
-- [x] HTTPS 배포: GitHub Pages (공개 저장소 `msgjsmj/gps-test`, 사용자 결정 2026-10-20). `main` push → Pages 자동 배포. `.nojekyll`로 정적 파일 그대로 서빙.
+- [x] HTTPS 배포: GitHub Pages (공개 저장소 `msgjsmj/gps-test`, 사용자 결정 2026-10-20). `main`에 들어가면 → Pages 자동 배포(2026-10-22부터 `main`은 PR 머지로만 바뀜). `.nojekyll`로 정적 파일 그대로 서빙.
   - 저장소 전용 git 작성자: `Minkyu Seo <1224114+msgjsmj@users.noreply.github.com>`(호스트명 노출 방지, 전역 설정은 그대로).
 - [x] 전체 리뷰 2회 연속 무결 (리뷰어 2명: 정확성 / 현장 사용성, 기준 = 중간 이상 0건) — **9·10회차 연속 CLEAN으로 달성 (2026-10-20, 코드 `3503e75`)**
   - 1회차: 문제 7건 → 수정(`6a17884`). 방향 판정의 footprint 내부 샘플, 잠금 후 오래된 GPS, 카메라 거부 시 무조준 기록, 지도 위 배치 바, 테스트별 집계, 정답 화면 편향 등.
@@ -134,6 +134,7 @@
   - **건물마다 사진, 넘겨 보기, 서 있는 건물 먼저** (사용자 결정): 묶인 구역은 사진 한 장이 어느 건물인지 몰랐다(덕수궁 소개의 대한문도 같은 문제). 사진을 건물 단위로(`data/building-photos.json`, `assets/buildings/`, 13장 — 기존 9장은 건물 이름으로 옮김: 덕수궁 소개 → 대한문, 즉조당 일원 → 석어당). 새 4장(라이선스·분류를 Commons API로 확인): 중화문 Richard Mortel 2018 CC BY 2.0(현판 中和門), 덕홍전 Mobius6 2024 CC BY 4.0(현판 德弘殿), 준명당 Gapo 2011 CC BY-SA 3.0(현판 浚明堂), 즉조당 문화재청 2013 공공누리 제1유형. **즉조당 사진 주의**: Commons 분류는 '준명당'이지만 원본 두 건물 사진에서 동쪽 건물을 잘라 낸 것 — 왼쪽 끝 복도 통로, 오른쪽 끝 석어당 지붕, 뒤 유리 건물이 원본의 오른쪽(동쪽) 건물과 일치하고, 데이터상 서→동 석조전·준명당·즉조당·석어당이라 즉조당이 맞다(파일 `note`). 검증(headless 390×844): 가짜 GPS 준명당 앞 → 카드 "즉조당 일원" 사진 "준명당 · 1/3 → 석어당 · 2/3 → 즉조당 · 3/3"(넘기기, 장마다 출처), 카드를 연 채 덕홍전 앞 → 닫자 "덕홍전 · 1/2 → 함녕전 · 2/2", "설명 보기"도 덕홍전 먼저, 기록 썸네일 = 처음 열린 자리의 건물(준명당·덕홍전), 시뮬레이션 `?` → 덕수궁 소개 "대한문", 중화전 일원 "중화문 · 1/2 → 중화전 · 2/2", 한 동 구역은 번호 없이 이름만. 테스트 43/43(모든 건물에 출처 있는 사진 파일), 콘솔 에러 0.
 
 - [x] **v0.1 태그** (2026-10-22, 사용자 요청) — `v0.1` = `bfda2ec`(주석 태그, GitHub에 올림). 자동 열림(위치로 구역 3초, 방향 맞으면 1.5초) + 건물별 사진 카드 + 열림 기록 내보내기까지의 첫 버전. 이 버전으로 되돌려 보려면 `git checkout v0.1`.
+- [x] **`main` 보호 — PR로만 머지** (2026-10-22, 사용자 요청) — 저장소 규칙 "main: PR only"(ruleset 25561429): PR 필수(승인 0), 강제 푸시·삭제 금지, 우회 없음(주인 포함). 검증: 규칙 적용 후 `git push origin <브랜치>:main` → `GH013 … Changes must be made through a pull request`로 거절, `main` 그대로(`027332e`). 이 문서 변경이 첫 PR로 머지됨. 작업 흐름은 위 "변경 올리기".
 
 ## 설계
 
@@ -190,9 +191,22 @@ test/                 node --test
 npm run serve                 # http://localhost:8000 (캐시 금지 서버, tools/serve.py)
 node --test                   # 순수 로직 테스트
 ```
-폰 테스트는 HTTPS 필요(Geolocation·카메라·방향 API 제약) → GitHub Pages(`main` push 시 자동 배포).
+폰 테스트는 HTTPS 필요(Geolocation·카메라·방향 API 제약) → GitHub Pages(`main`에 PR이 머지되면 자동 배포).
 OSM 데이터 갱신: `npm run build:area` (Overpass, 실패 시 미러로 재시도).
 장소 설명 갱신: `npm run import:guide` (기본 `main`, 특정 커밋은 `node tools/import-guide.mjs <ref>`). 건물을 추가하면 `BUILDING_PLACE`도 채워야 테스트가 통과한다.
+
+### 변경 올리기 — PR만 (2026-10-22 사용자 결정)
+`main`에는 저장소 규칙(ruleset "main: PR only")이 걸려 있다: **PR 없이 들어갈 수 없고, 강제 푸시·삭제도 막힘. 예외 없음(저장소 주인 포함).** 승인은 0명이라 PR을 올린 사람이 직접 머지할 수 있다. 머지 = 배포.
+```bash
+git fetch origin && git switch -c <작업-브랜치> origin/main   # 늘 최신 main에서 시작
+# … 수정, node --test, 커밋 …
+git push -u origin <작업-브랜치>
+gh pr create --fill                                         # PR 올리기
+gh pr merge --squash --delete-branch                        # 머지(= 배포), 브랜치 정리
+git switch main && git pull --ff-only                       # 로컬 main 맞추기
+```
+- `main`에 직접 `git push`하면 GitHub가 거절한다("Changes must be made through a pull request"). 규칙을 바꾸거나 잠시 끄는 건 저장소 주인이 Settings → Rules → Rulesets에서.
+- 여러 사람·세션이 동시에 작업하므로 PR이 늦어지면 머지 전에 `git fetch && git rebase origin/main` 후 다시 올린다.
 
 ## Big picture ahead (generative sequence)
 1. **판정이 PC에서 끝까지 도는 것**이 중심. 시뮬레이션(지도 탭 = 내 위치)으로 판정 품질을 눈으로 보며 튜닝.
@@ -209,7 +223,7 @@ OSM 데이터 갱신: `npm run build:area` (Overpass, 실패 시 미러로 재�
 - "(N초 전)"이 상태줄과 미리보기에 두 번 보인다. 카메라 없는 경로(시뮬레이션) UX 확인 모드에서 50 ms 넘게 떨어진 연타는 각각 기록된다.
 
 ## Watch out
-- **협업자** `puhahasu`(머라고 덕수궁 맵 주인, yangsy2820@gmail.com 쪽 계정 — 사용자 지정) — 2026-10-22 협업자 초대(쓰기 권한: 개인 저장소는 읽기 전용이 없음). 수락하면 `main`에 직접 푸시할 수 있고 푸시 = 배포다 → 올리기 전에 항상 `git fetch` 후 `origin/main` 위로 rebase, 강제 푸시 금지.
+- **협업자** `puhahasu`(머라고 덕수궁 맵 주인, yangsy2820@gmail.com 쪽 계정 — 사용자 지정) — 2026-10-22 협업자 초대(쓰기 권한: 개인 저장소는 읽기 전용이 없음). 수락하면 PR을 올리고 머지할 수 있다(머지 = 배포). `main` 직접 푸시는 규칙으로 막혀 있다(위 "변경 올리기").
 - 건물 중심 간 최근접 거리: 경복궁 중앙값 27.8 m(하위 25% ≤ 20 m), 덕수궁 준명당–즉조당 20.7 m. 스마트폰 GPS 오차와 같은 크기 → 인접 건물 오판은 반드시 생긴다. 목표는 0이 아니라 **측정 가능하게** 만드는 것.
 - iOS 방향 센서는 사용자 제스처 안에서 `DeviceOrientationEvent.requestPermission()` 필요. 방위는 `webkitCompassHeading`(자북 기준). 세로로 세워 들면 카메라 방향과 맞는다는 것을 **사용자가 현장에서 확인**(2026-10-20, 방향 반영 시 판정이 확실히 좋아짐). **가로로 들면 90° 어긋남**(기기 기본 방향=세로 기준이라 윗변을 따라감, 사용자 보고) → `landscapeCorrection`: 중력(beta/gamma)으로 어느 변이 위인지 구해 윗변이 왼쪽이면 +90°, 오른쪽이면 −90°(회전 잠금과 무관). 상태줄 "가로 +90°", 기록에 `correction`·원값. 회전 잠금 켜고/끄고 모두 실기기에서 맞음을 확인. Android는 `deviceorientationabsolute`의 오일러 각에서 W3C 명세 공식으로 **뒷면 카메라 방위**를 계산(`backCameraHeading`). 기록에 `headingSource`를 남겨 현장에서 비교.
 - 나침반 값은 두 플랫폼 모두 **자북 기준**으로 보고 area의 `declination`(덕수궁 -9.0°, WMM2025 2026-10-20: -9.02°, BGS·NOAA 계산기 일치)으로 진북 보정. 원값(`magnetic`, `raw`)도 기록 → 가정이 틀려도 재계산 가능. 지도 위 방향 부채꼴로 현장에서 눈으로 확인.
